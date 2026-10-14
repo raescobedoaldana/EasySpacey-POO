@@ -6,6 +6,7 @@ from distribucion import Distribucion
 from habitacion import Habitacion
 from mueble import Mueble
 from punto3d import Punto3D
+from restriccion import Restriccion
 from persistencia import guardar_proyecto, cargar_proyecto
 class Vista:
     # Gestiona entradas, proyectos y visualización de distribuciones.
@@ -74,12 +75,67 @@ class Vista:
         width = self.solicitar_numero_positivo("Ancho (m): ")
         length = self.solicitar_numero_positivo("Largo (m): ")
         height = self.solicitar_numero_positivo("Alto (m): ")
-        return Habitacion(
+        room = Habitacion(
             name,
             width,
             length,
             height
         )
+        while self.preguntar_si_no("¿Desea agregar una puerta o ventana?"):
+            room.agregar_restriccion(self.solicitar_restriccion(room))
+            self.mostrar_mensaje("Restricción agregada correctamente.")
+        return room
+
+    def solicitar_opcion(self, title, options):
+        print(title)
+        for number, label in options.items():
+            print(f"{number}. {label}")
+        while True:
+            choice = input("Seleccione una opción: ").strip()
+            if choice in options:
+                return options[choice]
+            self.mostrar_error("Seleccione una opción disponible.")
+
+    def solicitar_restriccion(self, room):
+        print("\nAGREGAR PUERTA O VENTANA")
+        restriction_type = self.solicitar_opcion(
+            "Tipo:", {"1": "Puerta", "2": "Ventana"}
+        )
+        wall = self.solicitar_opcion(
+            "Pared:",
+            {"1": "Superior", "2": "Inferior", "3": "Izquierda", "4": "Derecha"}
+        )
+        horizontal = wall in ("Superior", "Inferior")
+        labels = (
+            {"1": "Izquierda", "2": "Centro", "3": "Derecha"}
+            if horizontal
+            else {"1": "Arriba", "2": "Centro", "3": "Abajo"}
+        )
+        displayed_section = self.solicitar_opcion("Posición aproximada:", labels)
+        section = {
+            "Izquierda": "Inicio", "Arriba": "Inicio", "Centro": "Centro",
+            "Derecha": "Final", "Abajo": "Final"
+        }[displayed_section]
+
+        while True:
+            width = self.solicitar_numero_positivo("Ancho sobre la pared (m): ")
+            height = self.solicitar_numero_positivo("Alto (m): ")
+            if restriction_type == "Puerta":
+                depth = width
+                self.mostrar_mensaje(
+                    f"Área libre para abrir: {width:.2f} x {width:.2f} m."
+                )
+            else:
+                depth = self.solicitar_numero_positivo(
+                    "Profundidad libre frente a la ventana (m, sugerido 0.50): "
+                )
+            try:
+                return Restriccion.crear_desde_pared(
+                    room, restriction_type, wall, section,
+                    width, height, depth
+                )
+            except ValueError as error:
+                self.mostrar_error(str(error))
     # Solicita una cantidad entera mayor que cero.
     def solicitar_cantidad(self):
         while True:
@@ -214,6 +270,7 @@ class Vista:
             f"{room.largo} x "
             f"{room.alto} m"
         )
+        print(f"Puertas/ventanas: {len(room.get_restricciones())}")
         if not distribution.get_muebles():
             print(
                 "Estado: habitación vacía"
@@ -260,6 +317,36 @@ class Vista:
             "silver",
         ]
         legend_items = []
+        for restriction in room.get_restricciones():
+            restricted_width, restricted_length = restriction.get_floor_dimensions()
+            color = "tomato" if restriction.tipo == "Puerta" else "deepskyblue"
+            restriction_patch = Rectangle(
+                (restriction.posicion.x, restriction.posicion.y),
+                restricted_width,
+                restricted_length,
+                facecolor=color,
+                edgecolor="black",
+                linewidth=2,
+                alpha=0.35,
+                hatch="//"
+            )
+            axes.add_patch(restriction_patch)
+            axes.text(
+                restriction.posicion.x + restricted_width / 2,
+                restriction.posicion.y + restricted_length / 2,
+                restriction.tipo,
+                ha="center",
+                va="center",
+                fontsize=8,
+                fontweight="bold"
+            )
+            legend_items.append(Patch(
+                facecolor=color,
+                edgecolor="black",
+                alpha=0.35,
+                hatch="//",
+                label=f"{restriction.tipo}: {restriction.pared}, {restriction.ancho} m"
+            ))
         for index, furniture in enumerate(
             distribution.get_muebles()
         ):
@@ -538,4 +625,6 @@ class Vista:
             limit=3
         )
 if __name__ == "__main__":
-    Vista().ejecutar()
+                                                                       
+    from interfaz_grafica import MatplotlibInterface
+    MatplotlibInterface().run()

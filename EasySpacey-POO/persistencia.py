@@ -12,6 +12,7 @@ from math import isfinite
 from habitacion import Habitacion
 from mueble import Mueble
 from punto3d import Punto3D
+from restriccion import Restriccion
 
 
 # Validar números y dimensiones
@@ -49,6 +50,18 @@ def mueble_a_diccionario(mueble):
     }
 
 
+def restriction_to_dictionary(restriction):
+    return {
+        "tipo": restriction.tipo,
+        "pared": restriction.pared,
+        "seccion": restriction.seccion,
+        "ancho": restriction.ancho,
+        "alto": restriction.alto,
+        "profundidad": restriction.profundidad,
+        "posicion": punto_a_diccionario(restriction.posicion)
+    }
+
+
 def habitacion_a_diccionario(habitacion):
     muebles = []
 
@@ -56,12 +69,18 @@ def habitacion_a_diccionario(habitacion):
     for mueble in habitacion.get_muebles():
         muebles.append(mueble_a_diccionario(mueble))
 
+    restrictions = [
+        restriction_to_dictionary(restriction)
+        for restriction in habitacion.get_restricciones()
+    ]
+
     return {
         "nombre": habitacion.get_nombre(),
         "ancho": habitacion.get_ancho(),
         "largo": habitacion.get_largo(),
         "alto": habitacion.get_alto(),
-        "muebles": muebles
+        "muebles": muebles,
+        "restricciones": restrictions
     }
 
 
@@ -154,6 +173,28 @@ def diccionario_a_mueble(datos):
     )
 
 
+def dictionary_to_restriction(data):
+    if not isinstance(data, dict):
+        raise ValueError("La restricción debe ser un diccionario.")
+    for field in ("ancho", "alto", "profundidad"):
+        validar_numero_positivo(data[field])
+    if data["tipo"] not in Restriccion.VALID_TYPES:
+        raise ValueError("Tipo de restricción inválido.")
+    if data["pared"] not in Restriccion.VALID_WALLS:
+        raise ValueError("Pared de restricción inválida.")
+    if data["seccion"] not in Restriccion.VALID_SECTIONS:
+        raise ValueError("Sección de restricción inválida.")
+    return Restriccion(
+        data["tipo"],
+        data["pared"],
+        data["seccion"],
+        data["ancho"],
+        data["alto"],
+        data["profundidad"],
+        diccionario_a_punto(data["posicion"])
+    )
+
+
 def diccionario_a_habitacion(datos):
     #Crea una habitación vacía
     if not isinstance(datos, dict):
@@ -183,6 +224,15 @@ def diccionario_a_habitacion(datos):
     for datos_mueble in datos["muebles"]:
         mueble = diccionario_a_mueble(datos_mueble)
         habitacion.agregar_mueble(mueble)
+
+                                                                            
+    restrictions = datos.get("restricciones", [])
+    if not isinstance(restrictions, list):
+        raise ValueError("Las restricciones deben estar en una lista.")
+    for restriction_data in restrictions:
+        habitacion.agregar_restriccion(
+            dictionary_to_restriction(restriction_data)
+        )
 
     return habitacion
 

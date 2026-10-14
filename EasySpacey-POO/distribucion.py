@@ -74,14 +74,42 @@ class Distribucion:
                     return True
         return False
 
+    @staticmethod
+    def furniture_overlaps_restriction(furniture, restriction):
+        restricted_width, restricted_length = restriction.get_floor_dimensions()
+        furniture_position = furniture.posicion
+        restriction_position = restriction.posicion
+        separated_x = (
+            furniture_position.x + furniture.ancho <= restriction_position.x
+            or restriction_position.x + restricted_width <= furniture_position.x
+        )
+        separated_y = (
+            furniture_position.y + furniture.largo <= restriction_position.y
+            or restriction_position.y + restricted_length <= furniture_position.y
+        )
+        return not (separated_x or separated_y)
+
+    def overlaps_restrictions(self, furniture=None):
+        items = self.muebles if furniture is None else [furniture]
+        return any(
+            self.furniture_overlaps_restriction(item, restriction)
+            for item in items
+            for restriction in self.habitacion.get_restricciones()
+        )
+
     def validar(self):
         all_inside = all(
             self.mueble_esta_dentro(item) for item in self.muebles
         )
-        self.valida = all_inside and not self.tiene_colisiones()
+        self.valida = (
+            all_inside
+            and not self.tiene_colisiones()
+            and not self.overlaps_restrictions()
+        )
         return self.valida
-
+    
         # Comprueba si existen impedimentos evidentes para colocar los muebles.
+    
     @staticmethod
     def verificar_espacio(habitacion):
         muebles = habitacion.get_muebles()
@@ -140,7 +168,7 @@ class Distribucion:
                     self.muebles_se_traslapan(furniture, other)
                     for other in placed_furniture
                 )
-                if not has_collision:
+                if not has_collision and not self.overlaps_restrictions(furniture):
                     placed_furniture.append(furniture)
                     was_placed = True
                     break
@@ -245,7 +273,7 @@ class Distribucion:
              round(m.posicion.z, 2)) for m in self.muebles
         ))
 
-    # Exige un desplazamiento visible de al menos un mueble.
+    # Exige un desplazamiento visible de al menos un mueble.                                                            
     def es_diferente_de(self, otra, distancia_minima=0.5):
         if self.obtener_firma() == otra.obtener_firma():
             return False
