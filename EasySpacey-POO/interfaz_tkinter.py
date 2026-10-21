@@ -3,6 +3,7 @@ import queue
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from time import perf_counter
 
 from distribucion import Distribucion
 from habitacion import Habitacion
@@ -12,7 +13,9 @@ from punto3d import Punto3D
 from restriccion import Restriccion
 
 
+# Lista desplazable para mostrar muebles y restricciones.
 class ScrollableList(ttk.Frame):
+    # Inicializa el estado y construye los elementos de la interfaz.
     def __init__(self, parent):
         super().__init__(parent)
         self.canvas = tk.Canvas(self, highlightthickness=0, background="#FFFFFF")
@@ -24,38 +27,53 @@ class ScrollableList(ttk.Frame):
         scrollbar.grid(row=0, column=1, sticky="ns")
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
+        # Ajusta el desplazamiento cuando cambia el contenido.
         self.content.bind("<Configure>", self._update_scroll_region)
+        # Mantiene el contenido ajustado al ancho visible.
         self.canvas.bind("<Configure>", self._fit_width)
         self.canvas.bind("<Enter>", lambda _event: self.canvas.bind_all("<MouseWheel>", self._wheel))
         self.canvas.bind("<Leave>", lambda _event: self.canvas.unbind_all("<MouseWheel>"))
 
+    # Actualiza el área desplazable según su contenido.
     def _update_scroll_region(self, _event=None):
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
+    # Ajusta el ancho del contenido al tamaño del Canvas.
     def _fit_width(self, event):
         self.canvas.itemconfigure(self.window, width=event.width)
 
+    # Desplaza la lista con la rueda del ratón.
     def _wheel(self, event):
         self.canvas.yview_scroll(int(-event.delta / 120), "units")
 
+    # Elimina los widgets actuales de la lista.
     def clear(self):
         for child in self.content.winfo_children():
             child.destroy()
 
 
+# Controla la ventana y conecta las entradas con la lógica.
 class TkinterInterface:
     COLORS = (
         "#4C78A8", "#F58518", "#54A24B", "#E45756",
         "#B279A2", "#FF9DA6", "#9D755D", "#72B7B2"
     )
 
+    # Inicializa el estado y construye los elementos de la interfaz.
     def __init__(self, root=None):
+        # Utiliza una ventana recibida o crea una nueva.
         self.root = root or tk.Tk()
+        # Guarda la habitación actual o None si todavía no existe.
         self.room = None
+        # Almacena las alternativas generadas.
         self.distributions = []
+        # Indica cuál alternativa se muestra.
         self.current_index = 0
+        # Permite descartar resultados de generaciones anteriores.
         self.generation_token = 0
+        # Identifica el redibujado pendiente al cambiar el tamaño.
         self.resize_job = None
+        # Relaciona claves de texto con campos Entry.
         self.entries = {}
         self._configure_window()
         self._configure_styles()
@@ -63,6 +81,7 @@ class TkinterInterface:
         self._refresh_lists()
         self._draw_preview()
 
+    # Configura el título, tamaño y distribución de la ventana.
     def _configure_window(self):
         self.root.title("EasySpacey")
         self.root.geometry("1500x850")
@@ -71,6 +90,7 @@ class TkinterInterface:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(1, weight=1)
 
+    # Define colores, fuentes y estilos de los widgets.
     def _configure_styles(self):
         style = ttk.Style(self.root)
         if "clam" in style.theme_names():
@@ -95,6 +115,7 @@ class TkinterInterface:
         style.configure("Status.TLabel", background="#F1F5F9", foreground="#334155",
                         font=("Segoe UI", 9))
 
+    # Construye los paneles principales de la aplicación.
     def _build_interface(self):
         header = ttk.Frame(self.root, padding=(22, 14, 22, 8))
         header.grid(row=0, column=0, sticky="ew")
@@ -121,6 +142,7 @@ class TkinterInterface:
         )
         self.status_label.grid(row=2, column=0, sticky="ew", padx=24, pady=(0, 10))
 
+    # Crea un campo de entrada y lo registra por su clave.
     def _entry(self, parent, key, label, row, column=0):
         frame = ttk.Frame(parent, style="Card.TFrame")
         frame.grid(row=row, column=column, sticky="ew", padx=4, pady=3)
@@ -131,6 +153,7 @@ class TkinterInterface:
         self.entries[key] = entry
         return entry
 
+    # Crea una lista desplegable de opciones permitidas.
     def _combo(self, parent, label, values, row, column=0):
         frame = ttk.Frame(parent, style="Card.TFrame")
         frame.grid(row=row, column=column, sticky="ew", padx=4, pady=3)
@@ -141,6 +164,7 @@ class TkinterInterface:
         combo.grid(row=1, column=0, sticky="ew", pady=(1, 0))
         return combo
 
+    # Construye los formularios y conecta sus botones.
     def _build_forms(self):
         panel = self.form_panel
         panel.columnconfigure(0, weight=1)
@@ -197,6 +221,7 @@ class TkinterInterface:
         actions.grid(row=3, column=0, sticky="ew", pady=(8, 0))
         for column in (0, 1, 2):
             actions.columnconfigure(column, weight=1)
+        # El botón ejecuta _generate cuando se pulsa.
         self.generate_button = ttk.Button(
             actions, text="Generar alternativas", style="Primary.TButton", command=self._generate
         )
@@ -205,6 +230,7 @@ class TkinterInterface:
         ttk.Button(actions, text="Siguiente", command=self._next).grid(row=1, column=1, sticky="ew", padx=3)
         ttk.Button(actions, text="Guardar JSON", command=self._save).grid(row=1, column=2, sticky="ew", padx=(3, 0))
 
+    # Crea el Canvas donde se dibuja la habitación.
     def _build_preview(self):
         self.preview_panel.columnconfigure(0, weight=1)
         self.preview_panel.rowconfigure(1, weight=1)
@@ -216,8 +242,10 @@ class TkinterInterface:
             highlightbackground="#CBD5E1"
         )
         self.preview.grid(row=1, column=0, sticky="nsew")
+        # Programa el redibujado cuando cambia el tamaño.
         self.preview.bind("<Configure>", self._schedule_preview)
 
+    # Crea las listas desplazables de elementos.
     def _build_lists(self):
         self.list_panel.columnconfigure(0, weight=1)
         self.list_panel.rowconfigure(1, weight=1)
@@ -233,6 +261,7 @@ class TkinterInterface:
         self.restriction_list = ScrollableList(self.list_panel)
         self.restriction_list.grid(row=3, column=0, sticky="nsew")
 
+    # Convierte texto a un número positivo o lanza ValueError.
     @staticmethod
     def _positive(text, field_name):
         try:
@@ -243,6 +272,7 @@ class TkinterInterface:
             raise ValueError(f"{field_name} debe ser mayor que cero.")
         return value
 
+    # Convierte texto a entero o informa un valor inválido.
     @staticmethod
     def _integer(text, field_name):
         try:
@@ -250,6 +280,7 @@ class TkinterInterface:
         except ValueError as error:
             raise ValueError(f"{field_name} debe ser un número entero.") from error
 
+    # Evita aceptar campos de texto vacíos.
     @staticmethod
     def _required(text, field_name):
         value = text.strip()
@@ -257,22 +288,30 @@ class TkinterInterface:
             raise ValueError(f"Seleccione o escriba {field_name}.")
         return value
 
+    # Obtiene y limpia el texto de un campo de entrada.
     def _entry_value(self, key):
         return self.entries[key].get().strip()
 
+    # Vacía los campos indicados después de usarlos.
     def _clear_entries(self, *keys):
         for key in keys:
             self.entries[key].delete(0, tk.END)
 
+    # Descarta alternativas antiguas tras modificar el proyecto.
     def _invalidate_distributions(self):
+        # Almacena las alternativas generadas.
         self.distributions = []
+        # Indica cuál alternativa se muestra.
         self.current_index = 0
+        # Invalida las tareas anteriores al cambiar el proyecto.
         self.generation_token += 1
 
+    # Actualiza el mensaje inferior y su color.
     def _set_status(self, message, error=False):
         self.status_var.set(message)
         self.status_label.configure(foreground="#B91C1C" if error else "#166534")
 
+    # Valida los datos y crea o reemplaza la habitación.
     def _create_room(self):
         try:
             name = self._required(self._entry_value("room_name"), "el nombre")
@@ -296,6 +335,7 @@ class TkinterInterface:
         except ValueError as error:
             self._set_status(str(error), True)
 
+    # Valida y agrega la cantidad solicitada de muebles.
     def _add_furniture(self):
         if self.room is None:
             self._set_status("Primero cree una habitación.", True)
@@ -314,6 +354,7 @@ class TkinterInterface:
                 self._positive(self._entry_value("furniture_length"), "Largo"),
                 self._positive(self._entry_value("furniture_height"), "Alto")
             )
+            # Crea tantos muebles como indique la cantidad.
             for number in range(1, quantity + 1):
                 item_name = name if quantity == 1 else f"{name} {number}"
                 self.room.agregar_mueble(
@@ -331,6 +372,7 @@ class TkinterInterface:
         except ValueError as error:
             self._set_status(str(error), True)
 
+    # Habilita la profundidad solo cuando corresponde.
     def _restriction_type_changed(self, _event=None):
         if self.restriction_type.get() == "Puerta":
             self.restriction_depth.delete(0, tk.END)
@@ -338,6 +380,7 @@ class TkinterInterface:
         else:
             self.restriction_depth.configure(state="normal")
 
+    # Valida y agrega una puerta o ventana.
     def _add_restriction(self):
         if self.room is None:
             self._set_status("Primero cree una habitación.", True)
@@ -369,7 +412,9 @@ class TkinterInterface:
         except ValueError as error:
             self._set_status(str(error), True)
 
+    # Reconstruye las listas con los elementos actuales.
     def _refresh_lists(self):
+        # Elimina las filas anteriores antes de actualizar.
         self.furniture_list.clear()
         self.restriction_list.clear()
         furniture = self.room.get_muebles() if self.room else []
@@ -385,12 +430,14 @@ class TkinterInterface:
             self._delete_restriction, "No hay puertas ni ventanas."
         )
 
+    # Crea las filas y botones para borrar elementos.
     def _populate_list(self, target, items, description, delete_callback, empty_message):
         target.content.columnconfigure(0, weight=1)
         if not items:
             ttk.Label(target.content, text=empty_message, style="ListText.TLabel",
                       anchor="center").grid(row=0, column=0, sticky="ew", padx=8, pady=18)
             return
+        # Recorre cada elemento junto con su índice.
         for index, item in enumerate(items):
             row = ttk.Frame(target.content, style="List.TFrame", padding=(8, 5))
             row.grid(row=index * 2, column=0, sticky="ew")
@@ -401,6 +448,7 @@ class TkinterInterface:
                        command=lambda i=index: delete_callback(i)).grid(row=0, column=1, padx=(6, 0))
             ttk.Separator(target.content).grid(row=index * 2 + 1, column=0, sticky="ew")
 
+    # Elimina un mueble y actualiza la vista.
     def _delete_furniture(self, index):
         item = self.room.get_muebles()[index]
         self.room.eliminar_mueble(item)
@@ -409,6 +457,7 @@ class TkinterInterface:
         self._draw_preview()
         self._set_status(f"Mueble '{item.nombre}' eliminado.")
 
+    # Elimina una restricción y actualiza la vista.
     def _delete_restriction(self, index):
         item = self.room.get_restricciones()[index]
         self.room.eliminar_restriccion(item)
@@ -417,22 +466,54 @@ class TkinterInterface:
         self._draw_preview()
         self._set_status(f"{item.tipo} de la pared {item.pared} eliminada.")
 
+ 
+    # Valida el espacio y lanza la generación en otro hilo.
     def _generate(self):
+        # Mide el tiempo previo a iniciar el hilo.
+        inicio = perf_counter()
+
         if self.room is None:
             self._set_status("Primero cree una habitación.", True)
             return
+
         if not Distribucion.verificar_espacio(self.room):
             self._set_status("Los muebles exceden el espacio disponible.", True)
             return
+
+        print(f"[TIEMPO] Validación: {perf_counter() - inicio:.4f} s")
+
+        # Guarda la versión del proyecto que se está procesando.
         token = self.generation_token
+
+        # Mide cuánto tarda copiar la habitación.
+        inicio_copia = perf_counter()
+        # Copia el proyecto para no modificarlo durante el cálculo.
         room_copy = copy.deepcopy(self.room)
+        print(f"[TIEMPO] Copia: {perf_counter() - inicio_copia:.4f} s")
+
+        # Crea una cola para recibir un único resultado del hilo.
         self.generation_queue = queue.Queue(maxsize=1)
         self.generate_button.state(["disabled"])
         self._set_status("Generando alternativas…")
-        threading.Thread(target=self._generate_worker, args=(room_copy, token), daemon=True).start()
-        self.root.after(50, self._poll_generation)
 
+        # Ejecuta el cálculo en un hilo secundario.
+        threading.Thread(
+            target=self._generate_worker,
+            args=(room_copy, token),
+            daemon=True
+        ).start()
+
+        # Revisa la cola desde el hilo de la interfaz.
+        self.root.after(50, self._poll_generation)
+        print(f"[TIEMPO] Inicio de generación: {perf_counter() - inicio:.4f} s")
+
+
+
+    # Calcula las alternativas sin usar widgets de Tkinter.
     def _generate_worker(self, room, token):
+        # Mide la generación matemática en el hilo secundario.
+        inicio = perf_counter()
+
         try:
             if not room.get_muebles():
                 distribution = Distribucion(room)
@@ -440,23 +521,35 @@ class TkinterInterface:
                 distribution.calcular_puntaje()
                 results = [distribution]
             else:
+                # Solicita candidatos y conserva hasta tres alternativas.
                 results = Distribucion.generar_distribuciones(
                     room, amount=300, limite_resultados=3
                 )
+
+            print(f"[TIEMPO] Algoritmo: {perf_counter() - inicio:.4f} s")
+            # Envía resultados y versión a la interfaz.
             self.generation_queue.put((results, token, None))
+
         except Exception as error:
+            print(f"[ERROR] Generación: {error}")
+            # Envía el error para mostrarlo sin cerrar la ventana.
             self.generation_queue.put(([], token, str(error)))
 
+
+    # Consulta la cola sin bloquear la ventana.
     def _poll_generation(self):
         try:
+            # Lee la cola sin esperar si aún está vacía.
             results, token, error = self.generation_queue.get_nowait()
         except queue.Empty:
             self.root.after(50, self._poll_generation)
             return
         self._finish_generation(results, token, error)
 
+    # Recibe los resultados y actualiza la interfaz.
     def _finish_generation(self, results, token, error):
         self.generate_button.state(["!disabled"])
+        # Ignora resultados que ya no corresponden al proyecto.
         if token != self.generation_token:
             return
         if error:
@@ -466,20 +559,27 @@ class TkinterInterface:
             self._set_status("No se encontró una distribución válida.", True)
             return
         self.distributions = results
+        # Indica cuál alternativa se muestra.
         self.current_index = 0
+        # Mide el tiempo que tarda el dibujo.
+        inicio_dibujo = perf_counter()
         self._draw_preview()
+        print(f"[TIEMPO] Dibujo: {perf_counter() - inicio_dibujo:.4f} s")
         self._set_status(f"{len(results)} alternativa(s) generada(s).")
 
+    # Muestra la alternativa anterior, si existe.
     def _previous(self):
         if self.distributions:
             self.current_index = (self.current_index - 1) % len(self.distributions)
             self._draw_preview()
 
+    # Muestra la alternativa siguiente, si existe.
     def _next(self):
         if self.distributions:
             self.current_index = (self.current_index + 1) % len(self.distributions)
             self._draw_preview()
 
+    # Solicita una ruta y guarda el proyecto en JSON.
     def _save(self):
         if self.room is None:
             self._set_status("No hay una habitación para guardar.", True)
@@ -495,14 +595,18 @@ class TkinterInterface:
         else:
             self._set_status("No se pudo guardar el proyecto.", True)
 
+    # Agrupa eventos de cambio de tamaño antes de dibujar.
     def _schedule_preview(self, _event=None):
         if self.resize_job is not None:
             self.root.after_cancel(self.resize_job)
         self.resize_job = self.root.after(50, self._draw_preview)
 
+    # Dibuja habitación, restricciones y muebles en el Canvas.
     def _draw_preview(self):
+        # Identifica el redibujado pendiente al cambiar el tamaño.
         self.resize_job = None
         canvas = self.preview
+        # Borra el plano anterior antes de dibujar el nuevo.
         canvas.delete("all")
         width = max(canvas.winfo_width(), 100)
         height = max(canvas.winfo_height(), 100)
@@ -514,12 +618,14 @@ class TkinterInterface:
 
         margin = 42
         room = self.room
+        # Calcula una escala que conserva las proporciones.
         scale = min((width - 2 * margin) / room.ancho, (height - 2 * margin) / room.largo)
         room_width = room.ancho * scale
         room_height = room.largo * scale
         origin_x = (width - room_width) / 2
         origin_y = (height - room_height) / 2
 
+        # Convierte medidas reales a coordenadas del Canvas.
         def rectangle(x, y, item_width, item_height, **options):
             return canvas.create_rectangle(
                 origin_x + x * scale, origin_y + y * scale,
@@ -528,6 +634,7 @@ class TkinterInterface:
             )
 
         rectangle(0, 0, room.ancho, room.largo, fill="#FFFFFF", outline="#0F172A", width=4)
+        # Dibuja cada puerta o ventana.
         for restriction in room.get_restricciones():
             item_width, item_height = restriction.get_floor_dimensions()
             color = "#FCA5A5" if restriction.tipo == "Puerta" else "#7DD3FC"
@@ -545,6 +652,7 @@ class TkinterInterface:
             distribution = self.distributions[self.current_index]
             furniture = distribution.get_muebles()
             score = distribution.get_puntaje()
+        # Dibuja cada mueble de la alternativa activa.
         for index, item in enumerate(furniture):
             rectangle(item.posicion.x, item.posicion.y, item.ancho, item.largo,
                       fill=self.COLORS[index % len(self.COLORS)], outline="#0F172A", width=2)
@@ -564,7 +672,9 @@ class TkinterInterface:
                 f"{room.nombre} — {len(room.get_muebles())} muebles pendientes de distribuir"
             )
 
+    # Inicia el ciclo de eventos de Tkinter.
     def run(self):
+        # Mantiene activa la ventana y procesa eventos.
         self.root.mainloop()
 
 
