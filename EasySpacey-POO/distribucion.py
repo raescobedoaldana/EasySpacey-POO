@@ -5,36 +5,49 @@ from random import Random
 from punto3d import Punto3D
 
 
+# Genera, valida y evalua configuraciones de muebles.
 class Distribucion:
+    # Peso del beneficio por acercar muebles con el mismo uso.
     PURPOSE_PROXIMITY_WEIGHT = 8.0
+    # Separacion minima considerada aprovechable.
     MINIMUM_USEFUL_GAP = 0.60
+    # Intensidad de la penalizacion por huecos pequenos.
     WASTED_GAP_PENALTY = 12.0
 
+    # Inicializa una distribucion con copias independientes de muebles.
     def __init__(self, room, furniture=None):
         self.habitacion = room
         source_furniture = room.get_muebles() if furniture is None else furniture
+        # Evita que mover una alternativa cambie los muebles originales.
         self.muebles = deepcopy(source_furniture)
         self.puntaje = 0.0
         self.valida = False
 
+    # Devuelve la habitacion asociada.
     def get_habitacion(self):
         return self.habitacion
 
+    # Devuelve los muebles de esta alternativa.
     def get_muebles(self):
         return self.muebles
 
+    # Devuelve la puntuacion calculada.
     def get_puntaje(self):
         return self.puntaje
 
+    # Indica si la distribucion supera las validaciones.
     def es_valida(self):
         return self.valida
 
+    # Agrega una copia del mueble a la alternativa.
     def agregar_mueble(self, furniture):
         self.muebles.append(deepcopy(furniture))
 
+    # Elimina un mueble de la alternativa.
     def eliminar_mueble(self, furniture):
         self.muebles.remove(furniture)
 
+    # Comprueba los limites de la habitacion en los tres ejes.
     def mueble_esta_dentro(self, furniture):
         position = furniture.posicion
         return (
@@ -47,6 +60,7 @@ class Distribucion:
         )
 
     @staticmethod
+    # Detecta interseccion tridimensional entre dos muebles.
     def muebles_se_traslapan(furniture_a, furniture_b):
         position_a = furniture_a.posicion
         position_b = furniture_b.posicion
@@ -65,6 +79,7 @@ class Distribucion:
         )
         return not (separated_x or separated_y or separated_z)
 
+    # Busca traslapes entre todos los pares de muebles.
     def tiene_colisiones(self):
         for index_a in range(len(self.muebles)):
             for index_b in range(index_a + 1, len(self.muebles)):
@@ -75,6 +90,7 @@ class Distribucion:
         return False
 
     @staticmethod
+    # Detecta interseccion en planta con una zona restringida.
     def furniture_overlaps_restriction(furniture, restriction):
         restricted_width, restricted_length = restriction.get_floor_dimensions()
         furniture_position = furniture.posicion
@@ -89,6 +105,7 @@ class Distribucion:
         )
         return not (separated_x or separated_y)
 
+    # Comprueba si uno o varios muebles invaden restricciones.
     def overlaps_restrictions(self, furniture=None):
         items = self.muebles if furniture is None else [furniture]
         return any(
@@ -97,6 +114,7 @@ class Distribucion:
             for restriction in self.habitacion.get_restricciones()
         )
 
+    # Valida limites, traslapes y restricciones.
     def validar(self):
         all_inside = all(
             self.mueble_esta_dentro(item) for item in self.muebles
@@ -107,10 +125,11 @@ class Distribucion:
             and not self.overlaps_restrictions()
         )
         return self.valida
-    
+
         # Comprueba si existen impedimentos evidentes para colocar los muebles.
-    
+
     @staticmethod
+    # Descarta muebles demasiado grandes o exceso de superficie.
     def verificar_espacio(habitacion):
         muebles = habitacion.get_muebles()
 
@@ -132,54 +151,81 @@ class Distribucion:
 
         return True
 
+    # Mide la separación entre un mueble y una restricción en planta.
+    @staticmethod
+    def _distancia_restriccion(furniture, restriction):
+        width, length = restriction.get_floor_dimensions()
+        x1, y1 = furniture.posicion.x, furniture.posicion.y
+        x2, y2 = restriction.posicion.x, restriction.posicion.y
+        gap_x = max(x1 - (x2 + width), x2 - (x1 + furniture.ancho), 0.0)
+        gap_y = max(y1 - (y2 + length), y2 - (y1 + furniture.largo), 0.0)
+        return hypot(gap_x, gap_y)
+
+    # Coloca muebles sin favorecer siempre la pared izquierda.
     def colocar_muebles(self, attempts_per_item=250, random_generator=None):
-        random_generator = random_generator or Random()
+        random_generator = random_generator if random_generator is not None else Random()
         placed_furniture = []
+        restrictions = self.habitacion.get_restricciones()
         self.muebles.sort(key=lambda item: item.calcular_volumen(), reverse=True)
 
         for furniture in self.muebles:
             max_x = self.habitacion.ancho - furniture.ancho
             max_y = self.habitacion.largo - furniture.largo
-
             if max_x < 0 or max_y < 0 or furniture.alto > self.habitacion.alto:
                 self.valida = False
                 return False
 
-            was_placed = False
+            # Explora bordes y posiciones aleatorias en orden variable.
+            modes = list(range(5))
+            valid_positions = []
             for attempt in range(attempts_per_item):
-                mode = attempt % 5
-                x = (
-                    0.0
-                    if mode == 0
-                    else max_x
-                    if mode == 1
-                    else random_generator.uniform(0, max_x)
-                )
-                y = (
-                    0.0
-                    if mode == 2
-                    else max_y
-                    if mode == 3
-                    else random_generator.uniform(0, max_y)
-                )
+                if attempt % len(modes) == 0:
+                    random_generator.shuffle(modes)
+                mode = modes[attempt % len(modes)]
+                x = (0.0 if mode == 0 else max_x if mode == 1
+                     else random_generator.uniform(0, max_x))
+                y = (0.0 if mode == 2 else max_y if mode == 3
+                     else random_generator.uniform(0, max_y))
                 furniture.set_posicion(Punto3D(round(x, 2), round(y, 2), 0.0))
 
+                # Rechaza posiciones que invaden muebles o restricciones.
                 has_collision = any(
                     self.muebles_se_traslapan(furniture, other)
                     for other in placed_furniture
                 )
-                if not has_collision and not self.overlaps_restrictions(furniture):
-                    placed_furniture.append(furniture)
-                    was_placed = True
+                if has_collision or self.overlaps_restrictions(furniture):
+                    continue
+
+                # Guarda varias posiciones válidas antes de elegir una.
+                if restrictions:
+                    clearance = min(
+                        self._distancia_restriccion(furniture, restriction)
+                        for restriction in restrictions
+                    )
+                else:
+                    clearance = 0.0
+                valid_positions.append((clearance, furniture.posicion.x, furniture.posicion.y))
+                if len(valid_positions) >= 8:
                     break
 
-            if not was_placed:
+            if not valid_positions:
                 self.valida = False
                 return False
+
+            # Con restricciones, prefiere separación; sin ellas, elige al azar.
+            if restrictions:
+                best_clearance = max(item[0] for item in valid_positions)
+                choices = [item for item in valid_positions if item[0] >= best_clearance - 1e-9]
+            else:
+                choices = valid_positions
+            _, x, y = random_generator.choice(choices)
+            furniture.set_posicion(Punto3D(x, y, 0.0))
+            placed_furniture.append(furniture)
 
         return self.validar()
 
     @classmethod
+    # Penaliza separaciones pequenas y poco aprovechables.
     def _dead_gap_penalty(cls, gap):
         if gap <= 0 or gap >= cls.MINIMUM_USEFUL_GAP:
             return 0.0
@@ -187,9 +233,11 @@ class Distribucion:
         return cls.WASTED_GAP_PENALTY * 4 * ratio * (1 - ratio)
 
     @staticmethod
+    # Comprueba interseccion de intervalos con longitud positiva.
     def _intervals_overlap(start_a, end_a, start_b, end_b):
         return min(end_a, end_b) > max(start_a, start_b)
 
+    # Evalua utilidad, cercania a paredes y separaciones.
     def calcular_puntaje(self):
         if not self.validar():
             self.puntaje = 0.0
@@ -204,6 +252,7 @@ class Distribucion:
                 self.habitacion.ancho - (position.x + furniture.ancho),
                 self.habitacion.largo - (position.y + furniture.largo),
             )
+            # Obtiene la distancia a la pared mas cercana.
             nearest_wall_distance = min(wall_distances)
             wall_bonus = furniture.utilidad / (1.0 + nearest_wall_distance)
             score += furniture.utilidad + wall_bonus
@@ -252,6 +301,7 @@ class Distribucion:
                 if furniture_a.uso.casefold() != furniture_b.uso.casefold():
                     continue
 
+                # Calcula separacion entre muebles del mismo uso.
                 distance = hypot(gap_x, gap_y)
                 average_utility = (
                     furniture_a.utilidad + furniture_b.utilidad
@@ -267,13 +317,15 @@ class Distribucion:
         return self.puntaje
 
     # Identifica una configuración por mueble y coordenadas.
+    # Crea una firma estable con nombres y posiciones redondeadas.
     def obtener_firma(self):
         return tuple(sorted(
             (m.nombre, round(m.posicion.x, 2), round(m.posicion.y, 2),
              round(m.posicion.z, 2)) for m in self.muebles
         ))
 
-    # Exige un desplazamiento visible de al menos un mueble.                                                            
+    # Exige un desplazamiento visible de al menos un mueble.
+    # Compara posiciones y exige movimiento de al menos un mueble.
     def es_diferente_de(self, otra, distancia_minima=0.5):
         if self.obtener_firma() == otra.obtener_firma():
             return False
@@ -287,6 +339,7 @@ class Distribucion:
         )
 
     @classmethod
+    # Genera candidatos y elige alternativas validas y distintas.
     def generar_distribuciones(
         cls,
         room,
@@ -307,7 +360,9 @@ class Distribucion:
                 alternative.calcular_puntaje()
                 candidates.append(alternative)
 
+        # Prioriza los candidatos mejor evaluados.
         candidates.sort(key=lambda d: d.get_puntaje(), reverse=True)
+        # Conserva hasta el limite de alternativas diferentes.
         results = []
         for candidate in candidates:
             if all(candidate.es_diferente_de(other, distancia_minima)
@@ -318,9 +373,11 @@ class Distribucion:
         return results
 
     @staticmethod
+    # Devuelve la primera alternativa, ordenada por puntuacion.
     def obtener_mejor(distributions):
         return distributions[0] if distributions else None
 
+    # Resume el estado, el puntaje y las posiciones.
     def __str__(self):
         status = "válida" if self.valida else "inválida"
         lines = [f"Distribución {status} | Puntaje: {self.puntaje:.2f}"]
