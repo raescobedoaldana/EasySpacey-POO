@@ -4,7 +4,6 @@ from punto3d import Punto3D
 class Mueble:
         #Un mueble dentro de EasySpacey
         #Esto hará un prisma rectángular con sus dimensiones
-        
 
     def __init__(
         self,
@@ -15,9 +14,9 @@ class Mueble:
         utilidad,
         posicion, #Coordenadas. Este es un punto
         uso = "Algo", #Funcionamiento
+        conexiones_necesarias=0,
     ):
-        
-        self.nombre = nombre 
+        self.nombre = nombre
         #características principales, ahora iniciadas
         self.ancho = ancho
         self.largo = largo
@@ -25,6 +24,8 @@ class Mueble:
         self.utilidad = utilidad
         self.posicion = posicion
         self.uso = uso
+        # Necesidades electricas propuestas conjuntamente por Raul y Dominic.
+        self.set_conexiones_necesarias(conexiones_necesarias)
 
     def calcular_volumen(self):
         return self.ancho * self.largo * self.alto
@@ -60,6 +61,20 @@ class Mueble:
     def get_uso(self):
         #trae el uso
         return self.uso
+
+    # Guarda una cantidad entera y no negativa de conexiones.
+    def set_conexiones_necesarias(self, cantidad):
+        if type(cantidad) is not int or cantidad < 0:
+            raise ValueError("Las conexiones necesarias deben ser un entero no negativo.")
+        self.conexiones_necesarias = cantidad
+
+    # Devuelve las conexiones que necesita este mueble.
+    def get_conexiones_necesarias(self):
+        return self.conexiones_necesarias
+
+    # Indica si el mueble necesita electricidad.
+    def requiere_electricidad(self):
+        return self.conexiones_necesarias > 0
 
     def __str__(self):
         #representación textual del mueble
