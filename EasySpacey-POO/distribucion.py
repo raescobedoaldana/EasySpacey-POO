@@ -1,5 +1,5 @@
 from copy import deepcopy
-from math import hypot
+from math import floor, hypot
 from random import Random
 
 from punto3d import Punto3D
@@ -10,9 +10,11 @@ class Distribucion:
     # Peso del beneficio por acercar muebles con el mismo uso.
     PURPOSE_PROXIMITY_WEIGHT = 8.0
     # Separacion minima considerada aprovechable.
-    MINIMUM_USEFUL_GAP = 0.60
+    MINIMUM_USEFUL_GAP = 0.15
     # Intensidad de la penalizacion por huecos pequenos.
-    WASTED_GAP_PENALTY = 12.0
+    WASTED_GAP_PENALTY = 24.0
+    # Resolucion centimetrica propuesta junto con Dominic.
+    GRID_STEP = 0.01
 
     # Inicializa una distribucion con copias independientes de muebles.
     def __init__(self, room, furniture=None):
@@ -182,11 +184,14 @@ class Distribucion:
                 if attempt % len(modes) == 0:
                     random_generator.shuffle(modes)
                 mode = modes[attempt % len(modes)]
-                x = (0.0 if mode == 0 else max_x if mode == 1
-                     else random_generator.uniform(0, max_x))
-                y = (0.0 if mode == 2 else max_y if mode == 3
-                     else random_generator.uniform(0, max_y))
-                furniture.set_posicion(Punto3D(round(x, 2), round(y, 2), 0.0))
+                # Genera posiciones en centimetros enteros sin crear una matriz.
+                max_x_cm = max(0, floor(max_x * 100 + 1e-9))
+                max_y_cm = max(0, floor(max_y * 100 + 1e-9))
+                x_cm = (0 if mode == 0 else max_x_cm if mode == 1
+                        else random_generator.randint(0, max_x_cm))
+                y_cm = (0 if mode == 2 else max_y_cm if mode == 3
+                        else random_generator.randint(0, max_y_cm))
+                furniture.set_posicion(Punto3D(x_cm / 100, y_cm / 100, 0.0))
 
                 # Rechaza posiciones que invaden muebles o restricciones.
                 has_collision = any(
@@ -227,10 +232,11 @@ class Distribucion:
     @classmethod
     # Penaliza separaciones pequenas y poco aprovechables.
     def _dead_gap_penalty(cls, gap):
-        if gap <= 0 or gap >= cls.MINIMUM_USEFUL_GAP:
+        # Penalizacion fuerte por huecos positivos menores a 15 cm; 0 cm es valido.
+        gap_cm = round(gap * 100)
+        if gap_cm <= 0 or gap_cm >= round(cls.MINIMUM_USEFUL_GAP * 100):
             return 0.0
-        ratio = gap / cls.MINIMUM_USEFUL_GAP
-        return cls.WASTED_GAP_PENALTY * 4 * ratio * (1 - ratio)
+        return cls.WASTED_GAP_PENALTY
 
     @staticmethod
     # Comprueba interseccion de intervalos con longitud positiva.
@@ -324,22 +330,27 @@ class Distribucion:
              round(m.posicion.z, 2)) for m in self.muebles
         ))
 
-    # Exige un desplazamiento visible de al menos un mueble.
-    # Compara posiciones y exige movimiento de al menos un mueble.
+    # Calcula el desplazamiento promedio de los muebles entre dos alternativas.
+    def distancia_promedio(self, otra):
+        posiciones = {m.nombre: m.posicion for m in otra.muebles}
+        if len(posiciones) != len(otra.muebles) or set(posiciones) != {m.nombre for m in self.muebles}:
+            return 0.0
+        if not self.muebles:
+            return 0.0
+        return sum(
+            hypot(m.posicion.x - posiciones[m.nombre].x,
+                  m.posicion.y - posiciones[m.nombre].y)
+            for m in self.muebles
+        ) / len(self.muebles)
+
+    # Exige que el desplazamiento promedio alcance la distancia minima.
     def es_diferente_de(self, otra, distancia_minima=0.5):
         if self.obtener_firma() == otra.obtener_firma():
             return False
-        posiciones = {m.nombre: m.posicion for m in otra.muebles}
-        if set(posiciones) != {m.nombre for m in self.muebles}:
-            return True
-        return any(
-            hypot(m.posicion.x - posiciones[m.nombre].x,
-                  m.posicion.y - posiciones[m.nombre].y) >= distancia_minima
-            for m in self.muebles
-        )
+        return self.distancia_promedio(otra) >= distancia_minima
 
     @classmethod
-    # Genera candidatos y elige alternativas validas y distintas.
+    # Genera candidatos y selecciona alternativas validas y variadas.
     def generar_distribuciones(
         cls,
         room,
@@ -360,16 +371,43 @@ class Distribucion:
                 alternative.calcular_puntaje()
                 candidates.append(alternative)
 
-        # Prioriza los candidatos mejor evaluados.
+        # Conserva el mejor puntaje como primera referencia.
         candidates.sort(key=lambda d: d.get_puntaje(), reverse=True)
-        # Conserva hasta el limite de alternativas diferentes.
-        results = []
-        for candidate in candidates:
-            if all(candidate.es_diferente_de(other, distancia_minima)
-                   for other in results):
-                results.append(candidate)
-                if len(results) >= limite_resultados:
-                    break
+        if not candidates:
+            return []
+        results = [candidates.pop(0)]
+
+        # Busca variedad entre opciones con puntajes cercanos al mejor.
+        while candidates and len(results) < limite_resultados:
+            valid_candidates = [
+                item for item in candidates
+                if all(item.es_diferente_de(other, distancia_minima) for other in results)
+            ]
+            if not valid_candidates:
+                break
+
+            # Prioriza un puntaje cercano al mejor sin exigirlo cuando no hay opciones.
+            best_score = results[0].get_puntaje()
+            tolerance = max(abs(best_score) * 0.10, 1.0)
+            competitive = [
+                item for item in valid_candidates
+                if item.get_puntaje() >= best_score - tolerance
+            ]
+            pool = competitive if competitive else valid_candidates
+
+            # Maximiza la distancia promedio respecto a la alternativa mas cercana.
+            selected = max(
+                pool,
+                key=lambda item: (
+                    min(item.distancia_promedio(other) for other in results),
+                    item.get_puntaje(),
+                ),
+            )
+            results.append(selected)
+            candidates.remove(selected)
+
+        # Mantiene la compatibilidad con obtener_mejor().
+        results.sort(key=lambda d: d.get_puntaje(), reverse=True)
         return results
 
     @staticmethod
