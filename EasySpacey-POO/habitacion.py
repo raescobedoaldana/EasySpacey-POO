@@ -1,4 +1,8 @@
+
 from mueble import Mueble
+from outlet import Outlet
+
+
 class Habitacion:
     #habitaciones dentro de EasySpacey (Prisma rectángular)
     #Sirve de almacen de muebles
@@ -57,11 +61,37 @@ class Habitacion:
     def get_restricciones(self):
         return self.restricciones
 
-    # Agrega un outlet a la habitacion.
-    def agregar_outlet(self, outlet):
-        from outlet import Outlet
+    # Comprueba que el outlet pertenezca a una pared de la habitacion.
+    def validar_outlet(self, outlet):
         if not isinstance(outlet, Outlet):
             raise TypeError("El elemento debe ser un Outlet.")
+
+        x = outlet.posicion.x
+        y = outlet.posicion.y
+        z = outlet.posicion.z
+
+        # Comprueba que la posicion este dentro de la habitacion.
+        if not (0 <= x <= self.ancho and
+                0 <= y <= self.largo and
+                0 <= z <= self.alto):
+            raise ValueError("El outlet esta fuera de la habitacion.")
+
+        # Comprueba la pared correspondiente a cada coordenada.
+        paredes = {
+            "Superior": y == 0,
+            "Inferior": y == self.largo,
+            "Izquierda": x == 0,
+            "Derecha": x == self.ancho
+        }
+
+        if not paredes.get(outlet.pared, False):
+            raise ValueError("El outlet no coincide con la pared indicada.")
+
+        return True
+
+    # Agrega un outlet valido a la habitacion.
+    def agregar_outlet(self, outlet):
+        self.validar_outlet(outlet)
         self.outlets.append(outlet)
 
     # Elimina un outlet registrado.
@@ -82,7 +112,11 @@ class Habitacion:
 
     # Calcula cuantas conexiones faltan, si las hay.
     def conexiones_faltantes(self):
-        return max(0, self.contar_conexiones_necesarias() - self.contar_conexiones_disponibles())
+        return max(
+            0,
+            self.contar_conexiones_necesarias()
+            - self.contar_conexiones_disponibles()
+        )
 
     def set_nombre(self, nombre):
         #altera el nombre
@@ -101,9 +135,9 @@ class Habitacion:
         self.alto = alto
 
     def __str__(self):
-            #representación textual de la habitación
-            return (
-                f"{self.nombre} | {self.ancho} x {self.largo} x {self.alto} | "
-                f"Muebles: {len(self.muebles)} | "
-                f"Restricciones: {len(self.restricciones)}"
-            )
+        #representación textual de la habitación
+        return (
+            f"{self.nombre} | {self.ancho} x {self.largo} x {self.alto} | "
+            f"Muebles: {len(self.muebles)} | "
+            f"Restricciones: {len(self.restricciones)}"
+        )

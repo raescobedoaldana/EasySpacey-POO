@@ -13,6 +13,7 @@ from habitacion import Habitacion
 from mueble import Mueble
 from punto3d import Punto3D
 from restriccion import Restriccion
+from outlet import Outlet
 
 
 # Validar números y dimensiones
@@ -46,7 +47,9 @@ def mueble_a_diccionario(mueble):
         "alto": mueble.alto,
         "utilidad": mueble.utilidad,
         "uso": mueble.uso,
-        "posicion": punto_a_diccionario(mueble.posicion)
+        "posicion": punto_a_diccionario(mueble.posicion),
+        # Guarda las conexiones electricas del mueble.
+        "conexiones_necesarias": mueble.get_conexiones_necesarias()
     }
 
 
@@ -62,6 +65,16 @@ def restriction_to_dictionary(restriction):
     }
 
 
+# Convierte un outlet en datos compatibles con JSON.
+def outlet_a_diccionario(outlet):
+    return {
+        "nombre": outlet.nombre,
+        "pared": outlet.pared,
+        "posicion": punto_a_diccionario(outlet.posicion),
+        "capacidad": outlet.capacidad
+    }
+
+
 def habitacion_a_diccionario(habitacion):
     muebles = []
 
@@ -74,13 +87,20 @@ def habitacion_a_diccionario(habitacion):
         for restriction in habitacion.get_restricciones()
     ]
 
+    # Guarda los outlets propuestos conjuntamente por Raul y Dominic.
+    outlets = [
+        outlet_a_diccionario(outlet)
+        for outlet in habitacion.get_outlets()
+    ]
+
     return {
         "nombre": habitacion.get_nombre(),
         "ancho": habitacion.get_ancho(),
         "largo": habitacion.get_largo(),
         "alto": habitacion.get_alto(),
         "muebles": muebles,
-        "restricciones": restrictions
+        "restricciones": restrictions,
+        "outlets": outlets
     }
 
 
@@ -109,7 +129,7 @@ def guardar_proyecto(habitacion, nombre_archivo):
         return True
 
     #Controlar errores de escritura o datos incorrectos
-    except (OSError, ValueError, TypeError, KeyError) as error:
+    except (OSError, ValueError, TypeError, KeyError, AttributeError) as error:
         print(f"Error al guardar el proyecto: {error}")
         return False
 
@@ -162,6 +182,9 @@ def diccionario_a_mueble(datos):
 
     posicion = diccionario_a_punto(datos["posicion"])
 
+    # Los proyectos antiguos utilizan cero conexiones por defecto.
+    conexiones = datos.get("conexiones_necesarias", 0)
+
     return Mueble(
         datos["nombre"],
         datos["ancho"],
@@ -169,21 +192,27 @@ def diccionario_a_mueble(datos):
         datos["alto"],
         datos["utilidad"],
         posicion,
-        datos["uso"]
+        datos["uso"],
+        conexiones_necesarias=conexiones
     )
 
 
 def dictionary_to_restriction(data):
     if not isinstance(data, dict):
         raise ValueError("La restricción debe ser un diccionario.")
+
     for field in ("ancho", "alto", "profundidad"):
         validar_numero_positivo(data[field])
+
     if data["tipo"] not in Restriccion.VALID_TYPES:
         raise ValueError("Tipo de restricción inválido.")
+
     if data["pared"] not in Restriccion.VALID_WALLS:
         raise ValueError("Pared de restricción inválida.")
+
     if data["seccion"] not in Restriccion.VALID_SECTIONS:
         raise ValueError("Sección de restricción inválida.")
+
     return Restriccion(
         data["tipo"],
         data["pared"],
@@ -192,6 +221,19 @@ def dictionary_to_restriction(data):
         data["alto"],
         data["profundidad"],
         diccionario_a_punto(data["posicion"])
+    )
+
+
+# Reconstruye un outlet y valida sus atributos.
+def diccionario_a_outlet(datos):
+    if not isinstance(datos, dict):
+        raise ValueError("El outlet debe ser un diccionario.")
+
+    return Outlet(
+        datos["nombre"],
+        datos["pared"],
+        diccionario_a_punto(datos["posicion"]),
+        datos["capacidad"]
     )
 
 
@@ -225,14 +267,26 @@ def diccionario_a_habitacion(datos):
         mueble = diccionario_a_mueble(datos_mueble)
         habitacion.agregar_mueble(mueble)
 
-                                                                            
     restrictions = datos.get("restricciones", [])
+
     if not isinstance(restrictions, list):
         raise ValueError("Las restricciones deben estar en una lista.")
+
     for restriction_data in restrictions:
         habitacion.agregar_restriccion(
             dictionary_to_restriction(restriction_data)
         )
+
+    # Recupera outlets o utiliza una lista vacia en proyectos antiguos.
+    outlets = datos.get("outlets", [])
+
+    if not isinstance(outlets, list):
+        raise ValueError("Los outlets deben estar en una lista.")
+
+    for datos_outlet in outlets:
+        outlet = diccionario_a_outlet(datos_outlet)
+        # Comprueba que cada outlet corresponda a una pared.
+        habitacion.agregar_outlet(outlet)
 
     return habitacion
 
@@ -297,7 +351,7 @@ if __name__ == "__main__":
         "Dormir"
     )
 
-    # Crear escritorio
+    # Crear escritorio con conexiones electricas
     escritorio = Mueble(
         "Escritorio",
         1.2,
@@ -305,12 +359,22 @@ if __name__ == "__main__":
         0.75,
         8,
         Punto3D(3, 2, 0),
-        "Trabajar/Estudiar"
+        "Trabajar/Estudiar",
+        conexiones_necesarias=2
     )
 
     # Agregar muebles a la habitacion
     habitacion.agregar_mueble(cama)
     habitacion.agregar_mueble(escritorio)
+
+    # Registrar un outlet en la pared superior
+    outlet = Outlet(
+        "Outlet 1",
+        "Superior",
+        Punto3D(2, 0, 0.3),
+        2
+    )
+    habitacion.agregar_outlet(outlet)
 
     # Mostrar datos originales
     print("\n===== DATOS ORIGINALES =====")
@@ -318,6 +382,11 @@ if __name__ == "__main__":
 
     for mueble in habitacion.get_muebles():
         print(mueble)
+
+    # Mostrar las conexiones electricas
+    print("Conexiones necesarias:", habitacion.contar_conexiones_necesarias())
+    print("Conexiones disponibles:", habitacion.contar_conexiones_disponibles())
+    print("Conexiones faltantes:", habitacion.conexiones_faltantes())
 
     # Guardar
     guardar_proyecto(
@@ -338,3 +407,6 @@ if __name__ == "__main__":
 
         for mueble in habitacion_cargada.get_muebles():
             print(mueble)
+
+        print("Outlets recuperados:", len(habitacion_cargada.get_outlets()))
+        print("Conexiones recuperadas:", habitacion_cargada.contar_conexiones_necesarias())

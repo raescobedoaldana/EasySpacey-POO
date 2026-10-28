@@ -11,6 +11,7 @@ from mueble import Mueble
 from persistencia import guardar_proyecto
 from punto3d import Punto3D
 from restriccion import Restriccion
+from outlet import Outlet
 
 
 # Lista desplazable para mostrar muebles y restricciones.
@@ -126,10 +127,30 @@ class TkinterInterface:
 
         body = ttk.Panedwindow(self.root, orient="horizontal")
         body.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 8))
-        self.form_panel = ttk.Frame(body, style="Card.TFrame", padding=12, width=390)
+        # Permite acceder a todos los formularios mediante desplazamiento.
+        self.form_container = ttk.Frame(body, style="Card.TFrame", width=390)
+        self.form_canvas = tk.Canvas(
+            self.form_container, background="#FFFFFF", highlightthickness=0,
+            width=365
+        )
+        self.form_scrollbar = ttk.Scrollbar(
+            self.form_container, orient="vertical", command=self.form_canvas.yview
+        )
+        self.form_canvas.configure(yscrollcommand=self.form_scrollbar.set)
+        self.form_canvas.pack(side="left", fill="both", expand=True)
+        self.form_scrollbar.pack(side="right", fill="y")
+        self.form_panel = ttk.Frame(self.form_canvas, style="Card.TFrame", padding=12)
+        self.form_window = self.form_canvas.create_window(
+            (0, 0), window=self.form_panel, anchor="nw"
+        )
+        # Ajusta la zona desplazable y el ancho de los formularios.
+        self.form_panel.bind("<Configure>", self._update_form_scroll)
+        self.form_canvas.bind("<Configure>", self._fit_form_width)
+        self.form_canvas.bind("<Enter>", self._enable_form_wheel)
+        self.form_canvas.bind("<Leave>", self._disable_form_wheel)
         self.preview_panel = ttk.Frame(body, style="Card.TFrame", padding=10)
         self.list_panel = ttk.Frame(body, style="Card.TFrame", padding=12, width=340)
-        body.add(self.form_panel, weight=0)
+        body.add(self.form_container, weight=0)
         body.add(self.preview_panel, weight=1)
         body.add(self.list_panel, weight=0)
         self._build_forms()
@@ -141,6 +162,26 @@ class TkinterInterface:
             self.root, textvariable=self.status_var, style="Status.TLabel", anchor="w"
         )
         self.status_label.grid(row=2, column=0, sticky="ew", padx=24, pady=(0, 10))
+
+    # Actualiza el espacio desplazable cuando cambian los formularios.
+    def _update_form_scroll(self, _event=None):
+        self.form_canvas.configure(scrollregion=self.form_canvas.bbox("all"))
+
+    # Mantiene los formularios ajustados al ancho visible.
+    def _fit_form_width(self, event):
+        self.form_canvas.itemconfigure(self.form_window, width=event.width)
+
+    # Activa la rueda al entrar al panel de formularios.
+    def _enable_form_wheel(self, _event=None):
+        self.form_canvas.bind_all("<MouseWheel>", self._scroll_forms)
+
+    # Desactiva la rueda al salir del panel de formularios.
+    def _disable_form_wheel(self, _event=None):
+        self.form_canvas.unbind_all("<MouseWheel>")
+
+    # Desplaza el panel izquierdo sin afectar el plano.
+    def _scroll_forms(self, event):
+        self.form_canvas.yview_scroll(int(-event.delta / 120), "units")
 
     # Crea un campo de entrada y lo registra por su clave.
     def _entry(self, parent, key, label, row, column=0):
@@ -190,12 +231,18 @@ class TkinterInterface:
         self._entry(furniture_box, "furniture_height", "Alto (m)", 2, 0)
         self._entry(furniture_box, "furniture_utility", "Utilidad (1–10)", 2, 1)
         self._entry(furniture_box, "furniture_quantity", "Cantidad", 3, 0)
+        # Registra conexiones para equipos ubicados sobre el mueble.
+        # Usa una etiqueta corta para evitar que el texto se corte.
+        self._entry(furniture_box, "furniture_connections", "Conexiones eléctricas", 4, 0)
+        ttk.Label(furniture_box, text="Opcional: deje vacío si no necesita electricidad (0).",
+                  style="Card.TLabel", wraplength=335, justify="left").grid(
+                      row=5, column=0, columnspan=2, sticky="w", padx=4, pady=(0, 3))
         self.furniture_use = self._combo(
             furniture_box, "Uso o propósito",
             ("Dormir", "Comer", "Cocinar", "Descansar", "Trabajar", "Almacenamiento"), 3, 1
         )
         ttk.Button(furniture_box, text="Agregar mueble(s)", style="Primary.TButton",
-                   command=self._add_furniture).grid(row=4, column=0, columnspan=2, sticky="ew", padx=4, pady=5)
+                   command=self._add_furniture).grid(row=6, column=0, columnspan=2, sticky="ew", padx=4, pady=5)
 
         restriction_box = ttk.LabelFrame(panel, text="3. Puertas y ventanas", padding=8)
         restriction_box.grid(row=2, column=0, sticky="ew", pady=8)
@@ -206,19 +253,65 @@ class TkinterInterface:
         self.restriction_wall = self._combo(
             restriction_box, "Pared", ("Superior", "Inferior", "Izquierda", "Derecha"), 0, 1
         )
-        self.restriction_section = self._combo(
-            restriction_box, "Posición", ("Inicio", "Centro", "Final"), 0, 2
-        )
+        # Posicion libre en centimetros, propuesta para mejorar la interfaz con Dominic.
+        self.restriction_offset = tk.DoubleVar(value=0.0)
+        self.restriction_position_label = tk.StringVar(value="Distancia desde la esquina inicial: 0.00 m")
         self._entry(restriction_box, "restriction_width", "Ancho (m)", 1, 0)
         self._entry(restriction_box, "restriction_height", "Alto (m)", 1, 1)
         self.restriction_depth = self._entry(
             restriction_box, "restriction_depth", "Profundidad libre (m)", 1, 2
         )
+        ttk.Label(restriction_box, text="Posición sobre la pared (deslizar)",
+                  style="Card.TLabel").grid(row=2, column=0, columnspan=3, sticky="w", padx=4)
+        self.restriction_slider = ttk.Scale(
+            restriction_box, from_=0, to=1, variable=self.restriction_offset,
+            command=self._restriction_slider_changed
+        )
+        self.restriction_slider.grid(row=3, column=0, columnspan=3, sticky="ew", padx=4, pady=4)
+        ttk.Label(restriction_box, textvariable=self.restriction_position_label,
+                  style="Card.TLabel", wraplength=340).grid(
+                      row=4, column=0, columnspan=3, sticky="w", padx=4)
+        # Una guia indica donde comienza la medida y donde quedara la abertura.
+        self.restriction_guide_canvas = tk.Canvas(
+            restriction_box, height=78, background="#FFFFFF", highlightthickness=1,
+            highlightbackground="#CBD5E1"
+        )
+        self.restriction_guide_canvas.grid(row=5, column=0, columnspan=3, sticky="ew", padx=4, pady=4)
+        self.restriction_guide_canvas.bind("<Configure>", self._draw_restriction_guide)
+        self.restriction_wall.bind("<<ComboboxSelected>>", self._update_restriction_slider)
+        self.entries["restriction_width"].bind("<KeyRelease>", self._update_restriction_slider)
         ttk.Button(restriction_box, text="Agregar puerta o ventana", style="Primary.TButton",
-                   command=self._add_restriction).grid(row=2, column=0, columnspan=3, sticky="ew", padx=4, pady=5)
+                   command=self._add_restriction).grid(row=6, column=0, columnspan=3, sticky="ew", padx=4, pady=5)
+
+        # Outlets propuestos conjuntamente por Raul y Dominic.
+        outlet_box = ttk.LabelFrame(panel, text="4. Tomacorrientes", padding=8)
+        outlet_box.grid(row=3, column=0, sticky="ew", pady=6)
+        for column in (0, 1, 2):
+            outlet_box.columnconfigure(column, weight=1)
+        self._entry(outlet_box, "outlet_name", "Nombre", 0, 0)
+        self.outlet_wall = self._combo(
+            outlet_box, "Pared", ("Superior", "Inferior", "Izquierda", "Derecha"), 0, 1
+        )
+        # Explica desde que esquina se mide la distancia en cada pared.
+        self.outlet_wall.bind("<<ComboboxSelected>>", self._update_outlet_guide)
+        self._entry(outlet_box, "outlet_distance", "Distancia desde esquina (m)", 1, 0)
+        self._entry(outlet_box, "outlet_height", "Altura desde suelo (m)", 1, 1)
+        self._entry(outlet_box, "outlet_capacity", "Conexiones", 1, 2)
+        self.outlet_guide = tk.StringVar(value="Seleccione una pared para ver desde donde se mide.")
+        ttk.Label(outlet_box, textvariable=self.outlet_guide, style="Card.TLabel",
+                  wraplength=340, justify="left").grid(row=2, column=0, columnspan=3,
+                                                       sticky="ew", padx=4, pady=(5, 2))
+        # La guia muestra el inicio y el extremo de la pared elegida.
+        self.outlet_guide_canvas = tk.Canvas(outlet_box, height=98, background="#FFFFFF",
+                                             highlightthickness=1, highlightbackground="#CBD5E1")
+        self.outlet_guide_canvas.grid(row=3, column=0, columnspan=3, sticky="ew", padx=4, pady=3)
+        self.outlet_guide_canvas.bind("<Configure>", self._draw_outlet_guide)
+        self.entries["outlet_distance"].bind("<KeyRelease>", self._draw_outlet_guide)
+        ttk.Button(outlet_box, text="Agregar outlet", style="Primary.TButton",
+                   command=self._add_outlet).grid(row=4, column=0, columnspan=3, sticky="ew", padx=4, pady=4)
 
         actions = ttk.Frame(panel, style="Card.TFrame")
-        actions.grid(row=3, column=0, sticky="ew", pady=(8, 0))
+        actions.grid(row=4, column=0, sticky="ew", pady=(8, 0))
         for column in (0, 1, 2):
             actions.columnconfigure(column, weight=1)
         # El botón ejecuta _generate cuando se pulsa.
@@ -250,6 +343,7 @@ class TkinterInterface:
         self.list_panel.columnconfigure(0, weight=1)
         self.list_panel.rowconfigure(1, weight=1)
         self.list_panel.rowconfigure(3, weight=1)
+        self.list_panel.rowconfigure(5, weight=1)
         ttk.Label(self.list_panel, text="Muebles agregados", style="CardTitle.TLabel").grid(
             row=0, column=0, sticky="w", pady=(0, 6)
         )
@@ -259,7 +353,12 @@ class TkinterInterface:
             row=2, column=0, sticky="w", pady=(0, 6)
         )
         self.restriction_list = ScrollableList(self.list_panel)
-        self.restriction_list.grid(row=3, column=0, sticky="nsew")
+        self.restriction_list.grid(row=3, column=0, sticky="nsew", pady=(0, 10))
+        ttk.Label(self.list_panel, text="Tomacorrientes", style="CardTitle.TLabel").grid(
+            row=4, column=0, sticky="w", pady=(0, 6)
+        )
+        self.outlet_list = ScrollableList(self.list_panel)
+        self.outlet_list.grid(row=5, column=0, sticky="nsew")
 
     # Convierte texto a un número positivo o lanza ValueError.
     @staticmethod
@@ -271,6 +370,20 @@ class TkinterInterface:
         if value <= 0:
             raise ValueError(f"{field_name} debe ser mayor que cero.")
         return value
+
+    # Valida medidas en centimetros enteros sin redondear entradas invalidas.
+    @staticmethod
+    def _centimeters(text, field_name, allow_zero=False):
+        from decimal import Decimal, InvalidOperation
+        try:
+            value = Decimal(text)
+        except (InvalidOperation, TypeError) as error:
+            raise ValueError(f"{field_name} debe ser numerico.") from error
+        if not value.is_finite() or value < 0 or (value == 0 and not allow_zero):
+            raise ValueError(f"{field_name} debe ser {'no negativo' if allow_zero else 'positivo'}.")
+        if value * 100 != (value * 100).to_integral_value():
+            raise ValueError(f"{field_name} admite como maximo dos decimales.")
+        return float(value)
 
     # Convierte texto a entero o informa un valor inválido.
     @staticmethod
@@ -321,7 +434,7 @@ class TkinterInterface:
                 self._positive(self._entry_value("room_length"), "Largo"),
                 self._positive(self._entry_value("room_height"), "Alto")
             )
-            if self.room and (self.room.get_muebles() or self.room.get_restricciones()):
+            if self.room and (self.room.get_muebles() or self.room.get_restricciones() or self.room.get_outlets()):
                 if not messagebox.askyesno(
                     "Reemplazar habitación",
                     "Crear otra habitación eliminará los elementos actuales. ¿Desea continuar?"
@@ -331,6 +444,7 @@ class TkinterInterface:
             self._invalidate_distributions()
             self._refresh_lists()
             self._draw_preview()
+            self._update_restriction_slider()
             self._set_status(f"Habitación '{name}' creada.")
         except ValueError as error:
             self._set_status(str(error), True)
@@ -349,6 +463,11 @@ class TkinterInterface:
                 raise ValueError("La utilidad debe estar entre 1 y 10.")
             if quantity <= 0:
                 raise ValueError("La cantidad debe ser mayor que cero.")
+            # Las conexiones son opcionales y cero significa sin electricidad.
+            connections_text = self._entry_value("furniture_connections")
+            connections = self._integer(connections_text, "Conexiones") if connections_text else 0
+            if connections < 0:
+                raise ValueError("Las conexiones no pueden ser negativas.")
             dimensions = (
                 self._positive(self._entry_value("furniture_width"), "Ancho"),
                 self._positive(self._entry_value("furniture_length"), "Largo"),
@@ -358,17 +477,17 @@ class TkinterInterface:
             for number in range(1, quantity + 1):
                 item_name = name if quantity == 1 else f"{name} {number}"
                 self.room.agregar_mueble(
-                    Mueble(item_name, *dimensions, utility, Punto3D(0, 0, 0), use)
+                    Mueble(item_name, *dimensions, utility, Punto3D(0, 0, 0), use, conexiones_necesarias=connections)
                 )
             self._invalidate_distributions()
             self._clear_entries(
                 "furniture_name", "furniture_width", "furniture_length",
-                "furniture_height", "furniture_utility", "furniture_quantity"
+                "furniture_height", "furniture_utility", "furniture_quantity", "furniture_connections"
             )
             self.furniture_use.set("")
             self._refresh_lists()
             self._draw_preview()
-            self._set_status(f"Se agregaron {quantity} mueble(s).")
+            self._set_status(f"Se agregaron {quantity} mueble(s). {self._electrical_warning()}")
         except ValueError as error:
             self._set_status(str(error), True)
 
@@ -380,7 +499,69 @@ class TkinterInterface:
         else:
             self.restriction_depth.configure(state="normal")
 
-    # Valida y agrega una puerta o ventana.
+    # Calcula la distancia maxima segun pared y ancho de la abertura.
+    def _restriction_limit(self):
+        if self.room is None:
+            return 0.0
+        wall = self.restriction_wall.get()
+        if wall not in ("Superior", "Inferior", "Izquierda", "Derecha"):
+            return 0.0
+        length = self.room.ancho if wall in ("Superior", "Inferior") else self.room.largo
+        try:
+            width = self._positive(self._entry_value("restriction_width"), "Ancho")
+        except ValueError:
+            return 0.0
+        return max(0.0, round(length - width, 2))
+
+    # Actualiza los limites del deslizador al cambiar pared o ancho.
+    def _update_restriction_slider(self, _event=None):
+        limit = self._restriction_limit()
+        self.restriction_slider.configure(to=max(limit, 0.01))
+        self.restriction_offset.set(min(self.restriction_offset.get(), limit))
+        self._restriction_slider_changed()
+
+    # Ajusta la posicion al centimetro mas cercano.
+    def _restriction_slider_changed(self, _value=None):
+        limit = self._restriction_limit()
+        value = min(max(round(self.restriction_offset.get() * 100) / 100, 0.0), limit)
+        self.restriction_position_label.set(
+            f"Desde la esquina inicial: {value:.2f} m (máximo {limit:.2f} m)"
+        )
+        self._draw_restriction_guide()
+
+    # Muestra la longitud de pared y la posicion de la abertura.
+    def _draw_restriction_guide(self, _event=None):
+        if not hasattr(self, "restriction_guide_canvas"):
+            return
+        canvas = self.restriction_guide_canvas
+        canvas.delete("all")
+        width_px = max(canvas.winfo_width(), 200)
+        wall = self.restriction_wall.get()
+        if self.room is None or wall not in ("Superior", "Inferior", "Izquierda", "Derecha"):
+            canvas.create_text(width_px / 2, 38, text="Cree una habitación y elija una pared",
+                               fill="#64748B")
+            return
+        length = self.room.ancho if wall in ("Superior", "Inferior") else self.room.largo
+        try:
+            opening = self._positive(self._entry_value("restriction_width"), "Ancho")
+        except ValueError:
+            canvas.create_text(width_px / 2, 38, text="Introduzca el ancho de la abertura",
+                               fill="#64748B")
+            return
+        if opening > length:
+            canvas.create_text(width_px / 2, 38, text="El ancho supera la longitud de la pared",
+                               fill="#B91C1C")
+            return
+        start, end, y = 28, width_px - 28, 30
+        canvas.create_line(start, y, end, y, fill="#0F172A", width=4)
+        offset = min(round(self.restriction_offset.get() * 100) / 100, self._restriction_limit())
+        x1 = start + (end - start) * offset / length
+        x2 = start + (end - start) * (offset + opening) / length
+        canvas.create_line(x1, y, x2, y, fill="#F59E0B", width=9)
+        canvas.create_text(start, y + 23, text="Inicio: 0 m", anchor="w", fill="#166534")
+        canvas.create_text(end, y + 23, text=f"Final: {length:g} m", anchor="e", fill="#64748B")
+
+    # Valida y agrega una puerta o ventana en una posicion libre.
     def _add_restriction(self):
         if self.room is None:
             self._set_status("Primero cree una habitación.", True)
@@ -388,15 +569,26 @@ class TkinterInterface:
         try:
             restriction_type = self._required(self.restriction_type.get(), "el tipo")
             wall = self._required(self.restriction_wall.get(), "la pared")
-            section = self._required(self.restriction_section.get(), "la posición")
             width = self._positive(self._entry_value("restriction_width"), "Ancho")
             depth = width if restriction_type == "Puerta" else self._positive(
                 self._entry_value("restriction_depth"), "Profundidad"
             )
+            height = self._positive(self._entry_value("restriction_height"), "Alto")
+            # La clase Restriccion conserva la validacion de medidas.
             restriction = Restriccion.crear_desde_pared(
-                self.room, restriction_type, wall, section, width,
-                self._positive(self._entry_value("restriction_height"), "Alto"), depth
+                self.room, restriction_type, wall, "Personalizada", width, height, depth
             )
+            limit = self._restriction_limit()
+            offset = min(max(round(self.restriction_offset.get() * 100) / 100, 0.0), limit)
+            if wall == "Superior":
+                x, y = offset, 0.0
+            elif wall == "Inferior":
+                x, y = offset, self.room.largo - restriction.profundidad
+            elif wall == "Izquierda":
+                x, y = 0.0, offset
+            else:
+                x, y = self.room.ancho - restriction.profundidad, offset
+            restriction.posicion = Punto3D(round(x, 2), round(y, 2), 0.0)
             self.room.agregar_restriccion(restriction)
             self._invalidate_distributions()
             self._clear_entries("restriction_width", "restriction_height")
@@ -404,21 +596,118 @@ class TkinterInterface:
             self._clear_entries("restriction_depth")
             self.restriction_type.set("")
             self.restriction_wall.set("")
-            self.restriction_section.set("")
+            self.restriction_offset.set(0.0)
+            self._update_restriction_slider()
             self._refresh_lists()
             self._draw_preview()
             detail = "apertura igual al ancho" if restriction_type == "Puerta" else f"profundidad {depth:g} m"
-            self._set_status(f"{restriction_type} agregada en pared {wall}; {detail}.")
+            self._set_status(f"{restriction_type} agregada en pared {wall} a {offset:.2f} m; {detail}.")
         except ValueError as error:
             self._set_status(str(error), True)
+
+    # Explica la direccion de medida de la pared seleccionada.
+    def _update_outlet_guide(self, _event=None):
+        wall = self.outlet_wall.get()
+        if wall in ("Superior", "Inferior"):
+            direction = "desde la esquina izquierda hacia la derecha"
+            limit = self.room.ancho if self.room else None
+        elif wall in ("Izquierda", "Derecha"):
+            direction = "desde la esquina superior hacia abajo"
+            limit = self.room.largo if self.room else None
+        else:
+            self.outlet_guide.set("Seleccione una pared para ver desde donde se mide.")
+            self._draw_outlet_guide()
+            return
+        maximum = f" Longitud de la pared: {limit:g} m." if limit is not None else ""
+        self.outlet_guide.set(f"Mida {direction}.{maximum} Puede usar centimetros (ej. 2.35 m).")
+        self._draw_outlet_guide()
+
+    # Dibuja la pared, el punto inicial y la ubicacion estimada del outlet.
+    def _draw_outlet_guide(self, _event=None):
+        if not hasattr(self, "outlet_guide_canvas"):
+            return
+        canvas = self.outlet_guide_canvas
+        canvas.delete("all")
+        width = max(canvas.winfo_width(), 200)
+        wall = self.outlet_wall.get()
+        if wall not in ("Superior", "Inferior", "Izquierda", "Derecha"):
+            canvas.create_text(width / 2, 45, text="Seleccione una pared", fill="#64748B")
+            return
+        # La guia es esquematica; la posicion real usa las dimensiones de la habitacion.
+        start, end, y = 32, width - 32, 44
+        canvas.create_line(start, y, end, y, fill="#0F172A", width=5)
+        canvas.create_oval(start - 6, y - 6, start + 6, y + 6,
+                           fill="#16A34A", outline="#166534")
+        canvas.create_text(start, y + 22, text="0 m (inicio)", anchor="w",
+                           fill="#166534", font=("Segoe UI", 8))
+        limit = (self.room.ancho if wall in ("Superior", "Inferior")
+                 else self.room.largo) if self.room else None
+        canvas.create_text(end, y + 22, text=f"{limit:g} m (final)" if limit else "Final",
+                           anchor="e", fill="#64748B", font=("Segoe UI", 8))
+        try:
+            distance = self._centimeters(self._entry_value("outlet_distance"), "Distancia", True)
+        except (ValueError, KeyError):
+            distance = None
+        if distance is not None and limit and distance <= limit:
+            x = start + (end - start) * distance / limit
+            canvas.create_oval(x - 9, y - 9, x + 9, y + 9,
+                               fill="#FDE68A", outline="#92400E", width=2)
+            # Dos ranuras distinguen el outlet de un punto cualquiera.
+            canvas.create_line(x - 3, y - 4, x - 3, y + 4, fill="#92400E", width=2)
+            canvas.create_line(x + 3, y - 4, x + 3, y + 4, fill="#92400E", width=2)
+        canvas.create_text(width / 2, 12, text=f"Pared {wall.lower()} - vista desde arriba",
+                           fill="#334155", font=("Segoe UI", 9))
+
+    # Agrega un outlet sobre la pared y a la altura indicada.
+    def _add_outlet(self):
+        if self.room is None:
+            self._set_status("Primero cree una habitación.", True)
+            return
+        try:
+            name = self._required(self._entry_value("outlet_name"), "el nombre del outlet")
+            wall = self._required(self.outlet_wall.get(), "la pared del outlet")
+            distance = self._centimeters(self._entry_value("outlet_distance"), "Distancia", True)
+            height = self._centimeters(self._entry_value("outlet_height"), "Altura", True)
+            capacity = self._integer(self._entry_value("outlet_capacity"), "Conexiones")
+            # Comprueba que la distancia no exceda la longitud de la pared.
+            limit = self.room.ancho if wall in ("Superior", "Inferior") else self.room.largo
+            if distance > limit:
+                raise ValueError(f"La distancia debe estar entre 0 y {limit:g} m.")
+            # Las paredes horizontales usan X y las verticales usan Y.
+            if wall == "Superior":
+                position = Punto3D(distance, 0, height)
+            elif wall == "Inferior":
+                position = Punto3D(distance, self.room.largo, height)
+            elif wall == "Izquierda":
+                position = Punto3D(0, distance, height)
+            else:
+                position = Punto3D(self.room.ancho, distance, height)
+            self.room.agregar_outlet(Outlet(name, wall, position, capacity))
+            self._invalidate_distributions()
+            self._clear_entries("outlet_name", "outlet_distance", "outlet_height", "outlet_capacity")
+            self.outlet_wall.set("")
+            self._refresh_lists()
+            self._draw_preview()
+            self._set_status(f"Outlet '{name}' agregado. {self._electrical_warning()}")
+        except (ValueError, TypeError) as error:
+            self._set_status(str(error), True)
+
+    # Resume las conexiones insuficientes sin bloquear la generacion.
+    def _electrical_warning(self):
+        if self.room is None:
+            return ""
+        missing = self.room.conexiones_faltantes()
+        return f"Advertencia: faltan {missing} conexion(es)." if missing else "Conexiones suficientes."
 
     # Reconstruye las listas con los elementos actuales.
     def _refresh_lists(self):
         # Elimina las filas anteriores antes de actualizar.
         self.furniture_list.clear()
         self.restriction_list.clear()
+        self.outlet_list.clear()
         furniture = self.room.get_muebles() if self.room else []
         restrictions = self.room.get_restricciones() if self.room else []
+        outlets = self.room.get_outlets() if self.room else []
         self._populate_list(
             self.furniture_list, furniture,
             lambda item: f"{item.nombre}\n{item.uso} · {item.ancho:g} × {item.largo:g} m",
@@ -428,6 +717,11 @@ class TkinterInterface:
             self.restriction_list, restrictions,
             lambda item: f"{item.tipo}\n{item.pared} · {item.seccion} · {item.ancho:g} m",
             self._delete_restriction, "No hay puertas ni ventanas."
+        )
+        self._populate_list(
+            self.outlet_list, outlets,
+            lambda item: f"{item.nombre}\n{item.pared} · {item.capacidad} conexion(es)",
+            self._delete_outlet, "No hay outlets agregados."
         )
 
     # Crea las filas y botones para borrar elementos.
@@ -467,6 +761,15 @@ class TkinterInterface:
         self._set_status(f"{item.tipo} de la pared {item.pared} eliminada.")
 
  
+    # Elimina un outlet y actualiza las alternativas.
+    def _delete_outlet(self, index):
+        item = self.room.get_outlets()[index]
+        self.room.eliminar_outlet(item)
+        self._invalidate_distributions()
+        self._refresh_lists()
+        self._draw_preview()
+        self._set_status(f"Outlet '{item.nombre}' eliminado. {self._electrical_warning()}")
+
     # Valida el espacio y lanza la generación en otro hilo.
     def _generate(self):
         # Mide el tiempo previo a iniciar el hilo.
@@ -565,7 +868,7 @@ class TkinterInterface:
         inicio_dibujo = perf_counter()
         self._draw_preview()
         print(f"[TIEMPO] Dibujo: {perf_counter() - inicio_dibujo:.4f} s")
-        self._set_status(f"{len(results)} alternativa(s) generada(s).")
+        self._set_status(f"{len(results)} alternativa(s) generada(s). {self._electrical_warning()}")
 
     # Muestra la alternativa anterior, si existe.
     def _previous(self):
@@ -645,6 +948,26 @@ class TkinterInterface:
                 origin_y + (restriction.posicion.y + item_height / 2) * scale,
                 text=restriction.tipo, fill="#0F172A", font=("Segoe UI", 8)
             )
+
+        # Dibuja los outlets como puntos sin bloquear superficie.
+        for outlet in room.get_outlets():
+            ox = origin_x + outlet.posicion.x * scale
+            oy = origin_y + outlet.posicion.y * scale
+            # Simbolo de enchufe con dos ranuras y etiqueta dentro del plano.
+            canvas.create_oval(ox - 11, oy - 11, ox + 11, oy + 11,
+                               fill="#FDE68A", outline="#92400E", width=2)
+            canvas.create_rectangle(ox - 6, oy - 6, ox + 6, oy + 6,
+                                    fill="#FFFFFF", outline="#92400E", width=1)
+            canvas.create_line(ox - 2.5, oy - 3, ox - 2.5, oy + 3,
+                               fill="#92400E", width=2)
+            canvas.create_line(ox + 2.5, oy - 3, ox + 2.5, oy + 3,
+                               fill="#92400E", width=2)
+            # Coloca el texto hacia el interior para que no quede cortado.
+            label_x = ox + (16 if outlet.pared == "Izquierda" else -16 if outlet.pared == "Derecha" else 0)
+            label_y = oy + (19 if outlet.pared == "Superior" else -19)
+            anchor = "w" if outlet.pared == "Izquierda" else "e" if outlet.pared == "Derecha" else "center"
+            canvas.create_text(label_x, label_y, text=f"{outlet.nombre} ({outlet.capacidad})",
+                               anchor=anchor, fill="#854D0E", font=("Segoe UI", 9, "bold"))
 
         furniture = []
         score = None

@@ -1,10 +1,11 @@
+
 from punto3d import Punto3D
 
 
 class Restriccion:
     VALID_TYPES = ("Puerta", "Ventana")
     VALID_WALLS = ("Superior", "Inferior", "Izquierda", "Derecha")
-    VALID_SECTIONS = ("Inicio", "Centro", "Final")
+    VALID_SECTIONS = ("Inicio", "Centro", "Final", "Personalizada")
 
     def __init__(self, tipo, pared, seccion, ancho, alto, profundidad, posicion):
         self.tipo = tipo
@@ -26,8 +27,7 @@ class Restriccion:
             raise ValueError("Pared inválida.")
         if section not in cls.VALID_SECTIONS:
             raise ValueError("Sección inválida.")
-                                                                         
-                                                                  
+
         if restriction_type == "Puerta":
             clearance_depth = width
 
@@ -39,12 +39,14 @@ class Restriccion:
         horizontal_wall = wall in ("Superior", "Inferior")
         wall_length = room.ancho if horizontal_wall else room.largo
         room_depth = room.largo if horizontal_wall else room.ancho
+
         if width > wall_length:
             raise ValueError("El ancho supera la longitud de la pared.")
         if clearance_depth > room_depth:
             raise ValueError("La profundidad supera el tamaño de la habitación.")
 
         offset = cls._section_offset(wall_length, width, section)
+
         if wall == "Superior":
             x, y = offset, 0.0
         elif wall == "Inferior":
@@ -61,6 +63,9 @@ class Restriccion:
 
     @staticmethod
     def _section_offset(wall_length, width, section):
+        # Posicion personalizada: la interfaz ajusta la coordenada despues.
+        if section == "Personalizada":
+            return 0.0
         if section == "Inicio":
             return 0.0
         if section == "Centro":

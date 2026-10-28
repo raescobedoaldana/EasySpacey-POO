@@ -15,6 +15,8 @@ class Distribucion:
     WASTED_GAP_PENALTY = 24.0
     # Resolucion centimetrica propuesta junto con Dominic.
     GRID_STEP = 0.01
+    # Peso de la cercania electrica acordada por Raul y Dominic.
+    ELECTRICAL_PROXIMITY_WEIGHT = 8.0
 
     # Inicializa una distribucion con copias independientes de muebles.
     def __init__(self, room, furniture=None):
@@ -243,6 +245,52 @@ class Distribucion:
     def _intervals_overlap(start_a, end_a, start_b, end_b):
         return min(end_a, end_b) > max(start_a, start_b)
 
+    # Calcula la distancia en planta entre un mueble y un outlet.
+    @staticmethod
+    def _distancia_outlet(furniture, outlet):
+        x = outlet.posicion.x
+        y = outlet.posicion.y
+        left = furniture.posicion.x
+        right = left + furniture.ancho
+        top = furniture.posicion.y
+        bottom = top + furniture.largo
+        gap_x = max(left - x, x - right, 0.0)
+        gap_y = max(top - y, y - bottom, 0.0)
+        return hypot(gap_x, gap_y)
+
+    # Premia conexiones cercanas sin superar la capacidad de los outlets.
+    def calcular_bonificacion_electrica(self):
+        outlets = self.habitacion.get_outlets()
+        if not outlets:
+            return 0.0
+
+        # Cada outlet dispone de un numero limitado de conexiones.
+        capacidades = [outlet.capacidad for outlet in outlets]
+        score = 0.0
+        electricos = [m for m in self.muebles if m.requiere_electricidad()]
+
+        # Asigna primero los muebles con mayor utilidad.
+        electricos.sort(key=lambda m: m.utilidad, reverse=True)
+        for furniture in electricos:
+            pendientes = furniture.get_conexiones_necesarias()
+            opciones = sorted(
+                range(len(outlets)),
+                key=lambda i: self._distancia_outlet(furniture, outlets[i])
+            )
+            for index in opciones:
+                if pendientes == 0:
+                    break
+                asignadas = min(pendientes, capacidades[index])
+                if asignadas <= 0:
+                    continue
+                distancia = self._distancia_outlet(furniture, outlets[index])
+                score += (asignadas * self.ELECTRICAL_PROXIMITY_WEIGHT
+                          * furniture.utilidad / (1.0 + distancia))
+                capacidades[index] -= asignadas
+                pendientes -= asignadas
+
+        return score
+
     # Evalua utilidad, cercania a paredes y separaciones.
     def calcular_puntaje(self):
         if not self.validar():
@@ -318,6 +366,9 @@ class Distribucion:
                     / (1.0 + distance)
                 )
                 score += category_bonus
+
+        # Incorpora la cercania electrica al puntaje original.
+        score += self.calcular_bonificacion_electrica()
 
         self.puntaje = round(score, 2)
         return self.puntaje
