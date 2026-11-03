@@ -2,6 +2,8 @@ from punto3d import Punto3D
 
 
 class Mueble:
+    VALID_PLACEMENT_TYPES = ("Suelo", "Sobre objeto", "Pared")
+    VALID_WALLS = ("Automática", "Superior", "Inferior", "Izquierda", "Derecha")
         #Un mueble dentro de EasySpacey
         #Esto hará un prisma rectángular con sus dimensiones
 
@@ -17,6 +19,10 @@ class Mueble:
         conexiones_necesarias=0,
         permite_rotacion=True,
         rotacion=0,
+        placement_type="Suelo",
+        supports_objects=False,
+        preferred_wall="Automática",
+        wall_height=0.0,
     ):
         self.nombre = nombre
         #características principales, ahora iniciadas
@@ -34,6 +40,10 @@ class Mueble:
         self.permite_rotacion = permite_rotacion
         self.rotacion = 0
         self.set_rotacion(rotacion)
+        self.set_placement_type(placement_type)
+        self.set_supports_objects(supports_objects)
+        self.set_preferred_wall(preferred_wall)
+        self.set_wall_height(wall_height)
 
     def calcular_volumen(self):
         return self.ancho * self.largo * self.alto
@@ -110,11 +120,48 @@ class Mueble:
     def rotar(self):
         self.set_rotacion(90 if self.rotacion == 0 else 0)
 
+    def set_placement_type(self, placement_type):
+        if placement_type == "Sobre superficie":
+            placement_type = "Sobre objeto"
+        if placement_type not in self.VALID_PLACEMENT_TYPES:
+            raise ValueError("El tipo de colocacion no es valido.")
+        self.placement_type = placement_type
+
+    def get_placement_type(self):
+        return self.placement_type
+
+    def set_supports_objects(self, supports_objects):
+        if type(supports_objects) is not bool:
+            raise ValueError("Puede sostener objetos debe ser True o False.")
+        self.supports_objects = supports_objects
+
+    def can_support_objects(self):
+        return self.supports_objects
+
+    def set_preferred_wall(self, preferred_wall):
+        if preferred_wall not in self.VALID_WALLS:
+            raise ValueError("La pared preferida no es valida.")
+        self.preferred_wall = preferred_wall
+
+    def get_preferred_wall(self):
+        return self.preferred_wall
+
+    def set_wall_height(self, wall_height):
+        if isinstance(wall_height, bool) or not isinstance(wall_height, (int, float)):
+            raise ValueError("La altura de pared debe ser numerica.")
+        if wall_height < 0:
+            raise ValueError("La altura de pared no puede ser negativa.")
+        self.wall_height = float(wall_height)
+
+    def get_wall_height(self):
+        return self.wall_height
+
     def __str__(self):
         #representación textual del mueble
         return (
             f"{self.nombre} | {self.ancho} x {self.largo} x {self.alto} | "
             f"Utilidad: {self.utilidad} | Uso: {self.uso} | "
+            f"Colocacion: {self.placement_type} | "
             f"Posición: {self.posicion}"
         )
 

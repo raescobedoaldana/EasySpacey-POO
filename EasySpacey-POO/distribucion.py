@@ -1,5 +1,5 @@
 from copy import deepcopy
-from math import floor, hypot
+from math import ceil, floor, hypot
 from random import Random
 
 from punto3d import Punto3D
@@ -51,10 +51,35 @@ class Distribucion:
     def eliminar_mueble(self, furniture):
         self.muebles.remove(furniture)
 
-    # Comprueba los limites de la habitacion en los tres ejes.
+    def _supporting_furniture(self, furniture):
+        if furniture.get_placement_type() != "Sobre objeto":
+            return None
+        tolerance = 1e-9
+        for support in self.muebles:
+            if support is furniture or not support.can_support_objects():
+                continue
+            touches_top = abs(
+                furniture.posicion.z
+                - (support.posicion.z + support.alto)
+            ) <= tolerance
+            fits_x = (
+                furniture.posicion.x >= support.posicion.x - tolerance
+                and furniture.posicion.x + furniture.ancho
+                <= support.posicion.x + support.ancho + tolerance
+            )
+            fits_y = (
+                furniture.posicion.y >= support.posicion.y - tolerance
+                and furniture.posicion.y + furniture.largo
+                <= support.posicion.y + support.largo + tolerance
+            )
+            if touches_top and fits_x and fits_y:
+                return support
+        return None
+
+    # Comprueba que el mueble este apoyado y dentro de la habitacion.
     def mueble_esta_dentro(self, furniture):
         position = furniture.posicion
-        return (
+        inside_bounds = (
             position.x >= 0
             and position.y >= 0
             and position.z >= 0
@@ -62,6 +87,22 @@ class Distribucion:
             and position.y + furniture.largo <= self.habitacion.largo
             and position.z + furniture.alto <= self.habitacion.alto
         )
+        if not inside_bounds:
+            return False
+        if furniture.get_placement_type() == "Suelo":
+            return abs(position.z) <= 1e-9
+        if furniture.get_placement_type() == "Pared":
+            touches = {
+                "Superior": abs(position.y) <= 1e-9,
+                "Inferior": abs(position.y + furniture.largo - self.habitacion.largo) <= 1e-9,
+                "Izquierda": abs(position.x) <= 1e-9,
+                "Derecha": abs(position.x + furniture.ancho - self.habitacion.ancho) <= 1e-9,
+            }
+            preferred = furniture.get_preferred_wall()
+            if preferred == "Automática":
+                return any(touches.values())
+            return touches.get(preferred, False)
+        return self._supporting_furniture(furniture) is not None
 
     @staticmethod
     # Detecta interseccion tridimensional entre dos muebles.
@@ -148,7 +189,46 @@ class Distribucion:
             ):
                 return False
 
-            superficie_muebles += mueble.ancho * mueble.largo
+            if mueble.get_placement_type() == "Suelo":
+                superficie_muebles += mueble.ancho * mueble.largo
+            elif mueble.get_placement_type() == "Pared":
+                if mueble.get_wall_height() + mueble.alto > habitacion.alto:
+                    return False
+                wall = mueble.get_preferred_wall()
+                horizontal_fit = (
+                    mueble.ancho <= habitacion.ancho
+                    and mueble.largo <= habitacion.largo
+                )
+                vertical_fit = (
+                    mueble.largo <= habitacion.ancho
+                    and mueble.ancho <= habitacion.largo
+                )
+                if wall in ("Superior", "Inferior") and not horizontal_fit:
+                    return False
+                if wall in ("Izquierda", "Derecha") and not vertical_fit:
+                    return False
+                if wall == "Automática" and not (horizontal_fit or vertical_fit):
+                    return False
+
+        supports = [item for item in muebles if item.can_support_objects()]
+        for item in muebles:
+            if item.get_placement_type() != "Sobre objeto":
+                continue
+            can_fit = any(
+                support is not item
+                and (
+                    (item.ancho <= support.ancho and item.largo <= support.largo)
+                    or (
+                        item.puede_rotar()
+                        and item.largo <= support.ancho
+                        and item.ancho <= support.largo
+                    )
+                )
+                and support.get_wall_height() + support.alto + item.alto <= habitacion.alto
+                for support in supports
+            )
+            if not can_fit:
+                return False
 
         if superficie_muebles > superficie_habitacion:
             return False
@@ -165,14 +245,161 @@ class Distribucion:
         gap_y = max(y1 - (y2 + length), y2 - (y1 + furniture.largo), 0.0)
         return hypot(gap_x, gap_y)
 
+    def _place_on_wall(self, furniture, placed_furniture, attempts, random_generator):
+        preferred = furniture.get_preferred_wall()
+        walls = ([preferred] if preferred != "Automática" else
+                 ["Superior", "Inferior", "Izquierda", "Derecha"])
+        random_generator.shuffle(walls)
+        original_rotation = furniture.get_rotacion()
+        candidates = []
+        z = furniture.get_wall_height()
+        if z + furniture.alto > self.habitacion.alto:
+            return False
+
+        for wall in walls:
+            orientation = 0 if wall in ("Superior", "Inferior") else 90
+            furniture.set_rotacion(orientation)
+            if wall in ("Superior", "Inferior"):
+                maximum_cm = floor(
+                    (self.habitacion.ancho - furniture.ancho) * 100 + 1e-9
+                )
+            else:
+                maximum_cm = floor(
+                    (self.habitacion.largo - furniture.largo) * 100 + 1e-9
+                )
+            if maximum_cm < 0:
+                continue
+            for attempt in range(min(attempts, 30)):
+                mode = attempt % 4
+                if mode == 0:
+                    offset_cm = 0
+                elif mode == 1:
+                    offset_cm = maximum_cm
+                elif mode == 2:
+                    offset_cm = maximum_cm // 2
+                else:
+                    offset_cm = random_generator.randint(0, maximum_cm)
+                offset = offset_cm / 100
+                if wall == "Superior":
+                    x, y = offset, 0.0
+                elif wall == "Inferior":
+                    x, y = offset, self.habitacion.largo - furniture.largo
+                elif wall == "Izquierda":
+                    x, y = 0.0, offset
+                else:
+                    x, y = self.habitacion.ancho - furniture.ancho, offset
+                furniture.set_posicion(Punto3D(x, y, z))
+                if any(
+                    self.muebles_se_traslapan(furniture, other)
+                    for other in placed_furniture
+                ) or self.overlaps_restrictions(furniture):
+                    continue
+                candidates.append((x, y, z, orientation, wall))
+                break
+
+        if not candidates:
+            furniture.set_rotacion(original_rotation)
+            return False
+        x, y, z, orientation, wall = random_generator.choice(candidates)
+        furniture.set_rotacion(orientation)
+        furniture.set_preferred_wall(wall)
+        furniture.set_posicion(Punto3D(x, y, z))
+        return True
+
+    def _place_on_surface(self, furniture, placed_furniture, attempts, random_generator):
+        supports = [item for item in placed_furniture if item.can_support_objects()]
+        random_generator.shuffle(supports)
+        original_rotation = furniture.get_rotacion()
+        orientations = [original_rotation]
+        if furniture.puede_rotar() and furniture.ancho != furniture.largo:
+            orientations.append(90 if original_rotation == 0 else 0)
+        candidates = []
+
+        for support in supports:
+            for orientation in orientations:
+                furniture.set_rotacion(orientation)
+                min_x_cm = ceil((support.posicion.x - 1e-9) * 100)
+                min_y_cm = ceil((support.posicion.y - 1e-9) * 100)
+                max_x_cm = floor(
+                    (support.posicion.x + support.ancho - furniture.ancho) * 100 + 1e-9
+                )
+                max_y_cm = floor(
+                    (support.posicion.y + support.largo - furniture.largo) * 100 + 1e-9
+                )
+                z = round(support.posicion.z + support.alto, 2)
+                if max_x_cm < min_x_cm or max_y_cm < min_y_cm:
+                    continue
+                if z + furniture.alto > self.habitacion.alto:
+                    continue
+
+                for attempt in range(min(attempts, 30)):
+                    mode = attempt % 6
+                    if mode == 0:
+                        x_cm, y_cm = min_x_cm, min_y_cm
+                    elif mode == 1:
+                        x_cm, y_cm = max_x_cm, min_y_cm
+                    elif mode == 2:
+                        x_cm, y_cm = min_x_cm, max_y_cm
+                    elif mode == 3:
+                        x_cm, y_cm = max_x_cm, max_y_cm
+                    elif mode == 4:
+                        x_cm = (min_x_cm + max_x_cm) // 2
+                        y_cm = (min_y_cm + max_y_cm) // 2
+                    else:
+                        x_cm = random_generator.randint(min_x_cm, max_x_cm)
+                        y_cm = random_generator.randint(min_y_cm, max_y_cm)
+                    furniture.set_posicion(Punto3D(x_cm / 100, y_cm / 100, z))
+                    if any(
+                        self.muebles_se_traslapan(furniture, other)
+                        for other in placed_furniture
+                    ):
+                        continue
+                    same_purpose = int(
+                        furniture.uso.casefold() == support.uso.casefold()
+                    )
+                    candidates.append(
+                        (same_purpose, support.utilidad, x_cm / 100, y_cm / 100, z, orientation)
+                    )
+                    break
+
+        if not candidates:
+            furniture.set_rotacion(original_rotation)
+            return False
+        best_purpose = max(candidate[0] for candidate in candidates)
+        preferred = [candidate for candidate in candidates if candidate[0] == best_purpose]
+        _, _, x, y, z, orientation = random_generator.choice(preferred)
+        furniture.set_rotacion(orientation)
+        furniture.set_posicion(Punto3D(x, y, z))
+        return True
+
     # Coloca muebles sin favorecer siempre la pared izquierda.
     def colocar_muebles(self, attempts_per_item=250, random_generator=None):
         random_generator = random_generator if random_generator is not None else Random()
         placed_furniture = []
         restrictions = self.habitacion.get_restricciones()
-        self.muebles.sort(key=lambda item: item.calcular_volumen(), reverse=True)
+        placement_order = {"Suelo": 0, "Pared": 1, "Sobre objeto": 2}
+        self.muebles.sort(key=lambda item: (
+            placement_order[item.get_placement_type()],
+            -item.calcular_volumen()
+        ))
 
         for furniture in self.muebles:
+            if furniture.get_placement_type() == "Pared":
+                if not self._place_on_wall(
+                    furniture, placed_furniture, attempts_per_item, random_generator
+                ):
+                    self.valida = False
+                    return False
+                placed_furniture.append(furniture)
+                continue
+            if furniture.get_placement_type() == "Sobre objeto":
+                if not self._place_on_surface(
+                    furniture, placed_furniture, attempts_per_item, random_generator
+                ):
+                    self.valida = False
+                    return False
+                placed_furniture.append(furniture)
+                continue
             # Prueba 0 y 90 grados solo si el mueble permite rotacion.
             original_rotation = furniture.get_rotacion()
             orientations = [original_rotation]
@@ -311,6 +538,12 @@ class Distribucion:
         score = 0.0
         for furniture in self.muebles:
             position = furniture.posicion
+            if furniture.get_placement_type() == "Sobre objeto":
+                support = self._supporting_furniture(furniture)
+                score += furniture.utilidad * 3
+                if support and furniture.uso.casefold() == support.uso.casefold():
+                    score += furniture.utilidad
+                continue
             wall_distances = (
                 position.x,
                 position.y,

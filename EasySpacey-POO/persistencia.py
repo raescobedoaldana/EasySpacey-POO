@@ -52,7 +52,11 @@ def mueble_a_diccionario(mueble):
         "conexiones_necesarias": mueble.get_conexiones_necesarias(),
         # Conserva la orientacion y el permiso de rotacion del mueble.
         "rotacion": mueble.get_rotacion(),
-        "permite_rotacion": mueble.puede_rotar()
+        "permite_rotacion": mueble.puede_rotar(),
+        "tipo_colocacion": mueble.get_placement_type(),
+        "puede_sostener_objetos": mueble.can_support_objects(),
+        "pared_preferida": mueble.get_preferred_wall(),
+        "altura_pared": mueble.get_wall_height()
     }
 
 
@@ -192,6 +196,10 @@ def diccionario_a_mueble(datos):
     # Se crea a 0 grados y luego se intercambian las medidas solo si hace falta.
     rotacion = datos.get("rotacion", 0)
     permite_rotacion = datos.get("permite_rotacion", True)
+    placement_type = datos.get("tipo_colocacion", "Suelo")
+    supports_objects = datos.get("puede_sostener_objetos", False)
+    preferred_wall = datos.get("pared_preferida", "Automática")
+    wall_height = datos.get("altura_pared", 0.0)
     if type(rotacion) is not int or rotacion not in (0, 90):
         raise ValueError("La rotacion debe ser 0 o 90 grados.")
     if type(permite_rotacion) is not bool:
@@ -211,7 +219,11 @@ def diccionario_a_mueble(datos):
         datos["uso"],
         conexiones_necesarias=conexiones,
         permite_rotacion=permite_rotacion,
-        rotacion=rotacion
+        rotacion=rotacion,
+        placement_type=placement_type,
+        supports_objects=supports_objects,
+        preferred_wall=preferred_wall,
+        wall_height=wall_height
     )
 
 
