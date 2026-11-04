@@ -728,4 +728,3 @@ class Distribucion:
                 f"Posición: {furniture.posicion}"
             )
         return "\n".join(lines)
-

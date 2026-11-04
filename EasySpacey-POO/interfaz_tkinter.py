@@ -952,7 +952,7 @@ class TkinterInterface:
             lambda item: (f"{item.nombre}\n{item.uso} · {item.ancho:g} × {item.largo:g} × {item.alto:g} m"
                           f"\n{item.get_placement_type()} · Sostiene objetos: "
                           f"{'sí' if item.can_support_objects() else 'no'}"),
-            self._delete_furniture, "No hay muebles agregados."
+            self._delete_furniture, "No hay muebles agregados.", self._edit_furniture
         )
         self._populate_list(
             self.restriction_list, restrictions,
@@ -966,7 +966,7 @@ class TkinterInterface:
         )
 
     # Crea las filas y botones para borrar elementos.
-    def _populate_list(self, target, items, description, delete_callback, empty_message):
+    def _populate_list(self, target, items, description, delete_callback, empty_message, edit_callback=None):
         target.content.columnconfigure(0, weight=1)
         if not items:
             ttk.Label(target.content, text=empty_message, style="ListText.TLabel",
@@ -977,11 +977,139 @@ class TkinterInterface:
             row = ttk.Frame(target.content, style="List.TFrame", padding=(8, 5))
             row.grid(row=index * 2, column=0, sticky="ew")
             row.columnconfigure(0, weight=1)
-            ttk.Label(row, text=description(item), style="ListText.TLabel",
-                      justify="left").grid(row=0, column=0, sticky="w")
+            # El nombre del mueble abre su edicion; las otras listas siguen igual.
+            if edit_callback is not None:
+                ttk.Button(row, text=description(item),
+                           command=lambda i=index: edit_callback(i)).grid(
+                               row=0, column=0, sticky="ew", padx=(0, 4))
+            else:
+                ttk.Label(row, text=description(item), style="ListText.TLabel",
+                          justify="left").grid(row=0, column=0, sticky="w")
             ttk.Button(row, text="×", width=3, style="Delete.TButton",
                        command=lambda i=index: delete_callback(i)).grid(row=0, column=1, padx=(6, 0))
             ttk.Separator(target.content).grid(row=index * 2 + 1, column=0, sticky="ew")
+
+    # Abre una ventana para modificar un mueble sin borrarlo.
+    def _edit_furniture(self, index):
+        if self.room is None or not 0 <= index < len(self.room.get_muebles()):
+            return
+        original = self.room.get_muebles()[index]
+        window = tk.Toplevel(self.root)
+        window.title(f"Editar mueble - {original.nombre}")
+        window.geometry("460x640")
+        window.minsize(390, 520)
+        window.transient(self.root)
+        window.grab_set()
+
+        # El formulario tiene scroll para no ocultar los campos inferiores.
+        canvas = tk.Canvas(window, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(window, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        panel = ttk.Frame(canvas, padding=14)
+        panel_id = canvas.create_window((0, 0), window=panel, anchor="nw")
+        panel.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(panel_id, width=e.width))
+        panel.columnconfigure(1, weight=1)
+        fields = {}
+
+        # Rellena cada entrada con el valor actual del objeto.
+        def field(label, key, value, row):
+            ttk.Label(panel, text=label).grid(row=row, column=0, sticky="w", pady=5)
+            entry = ttk.Entry(panel)
+            entry.insert(0, str(value))
+            entry.grid(row=row, column=1, sticky="ew", padx=(8, 0), pady=5)
+            fields[key] = entry
+
+        field("Nombre", "nombre", original.nombre, 0)
+        field("Ancho (m)", "ancho", original.ancho, 1)
+        field("Largo (m)", "largo", original.largo, 2)
+        field("Alto (m)", "alto", original.alto, 3)
+        field("Utilidad (1-10)", "utilidad", original.utilidad, 4)
+        field("Conexiones", "conexiones", original.get_conexiones_necesarias(), 5)
+        field("Altura en pared (m)", "altura", original.get_wall_height(), 6)
+
+        ttk.Label(panel, text="Uso").grid(row=7, column=0, sticky="w", pady=5)
+        use = ttk.Combobox(panel, values=("Dormir", "Comer", "Cocinar", "Descansar",
+                                           "Trabajar", "Almacenamiento", "Decoración", "Iluminación"))
+        use.set(original.get_uso())
+        use.grid(row=7, column=1, sticky="ew", padx=(8, 0), pady=5)
+
+        ttk.Label(panel, text="Colocación").grid(row=8, column=0, sticky="w", pady=5)
+        placement = ttk.Combobox(panel, state="readonly", values=Mueble.VALID_PLACEMENT_TYPES)
+        placement.set(original.get_placement_type())
+        placement.grid(row=8, column=1, sticky="ew", padx=(8, 0), pady=5)
+
+        ttk.Label(panel, text="Pared preferida").grid(row=9, column=0, sticky="w", pady=5)
+        wall = ttk.Combobox(panel, state="readonly", values=Mueble.VALID_WALLS)
+        wall.set(original.get_preferred_wall())
+        wall.grid(row=9, column=1, sticky="ew", padx=(8, 0), pady=5)
+
+        rotate = tk.BooleanVar(value=original.puede_rotar())
+        support = tk.BooleanVar(value=original.can_support_objects())
+        ttk.Checkbutton(panel, text="Permitir rotación automática", variable=rotate).grid(
+            row=10, column=0, columnspan=2, sticky="w", pady=5)
+        ttk.Checkbutton(panel, text="Puede sostener objetos", variable=support).grid(
+            row=11, column=0, columnspan=2, sticky="w", pady=5)
+
+        # Evita introducir opciones de pared cuando el mueble no va en pared.
+        def update_wall(*_args):
+            enabled = placement.get() == "Pared"
+            wall.configure(state="readonly" if enabled else "disabled")
+            fields["altura"].configure(state="normal" if enabled else "disabled")
+        placement.bind("<<ComboboxSelected>>", update_wall)
+        update_wall()
+
+        # Valida una copia antes de cambiar el mueble original.
+        def save_changes():
+            try:
+                name = self._required(fields["nombre"].get(), "el nombre")
+                width = self._centimeters(fields["ancho"].get(), "Ancho")
+                length = self._centimeters(fields["largo"].get(), "Largo")
+                height = self._centimeters(fields["alto"].get(), "Alto")
+                utility = self._integer(fields["utilidad"].get(), "Utilidad")
+                connections = self._integer(fields["conexiones"].get(), "Conexiones")
+                if not 1 <= utility <= 10:
+                    raise ValueError("La utilidad debe estar entre 1 y 10.")
+                if connections < 0:
+                    raise ValueError("Las conexiones no pueden ser negativas.")
+                selected_use = self._required(use.get(), "el uso")
+                selected_placement = self._required(placement.get(), "la colocación")
+                selected_wall = wall.get() if selected_placement == "Pared" else "Automática"
+                wall_height = (self._centimeters(fields["altura"].get(), "Altura inferior", True)
+                               if selected_placement == "Pared" else 0.0)
+                if selected_placement == "Pared" and wall_height + height > self.room.alto:
+                    raise ValueError("El mueble supera la altura de la habitación.")
+
+                # Construye el candidato completo para evitar cambios parciales.
+                candidate = Mueble(
+                    name, width, length, height, utility,
+                    copy.deepcopy(original.posicion), selected_use,
+                    conexiones_necesarias=connections,
+                    permite_rotacion=rotate.get(),
+                    placement_type=selected_placement,
+                    supports_objects=support.get(),
+                    preferred_wall=selected_wall,
+                    wall_height=wall_height
+                )
+                # Conserva la orientación anterior si el nuevo permiso lo permite.
+                candidate.set_rotacion(original.get_rotacion())
+                # La lista original se actualiza solo después de validar todo.
+                self.room.get_muebles()[index] = candidate
+                self._invalidate_distributions()
+                self._refresh_lists()
+                self._draw_preview()
+                self._set_status(f"Mueble '{name}' actualizado. Genere nuevas alternativas. "
+                                 f"{self._electrical_warning()}")
+                window.destroy()
+            except (ValueError, TypeError) as error:
+                messagebox.showerror("No se pudo editar el mueble", str(error), parent=window)
+
+        buttons = ttk.Frame(panel)
+        buttons.grid(row=12, column=0, columnspan=2, sticky="ew", pady=(12, 4))
+        ttk.Button(buttons, text="Guardar cambios", command=save_changes).pack(side="left", padx=(0, 8))
+        ttk.Button(buttons, text="Cancelar", command=window.destroy).pack(side="left")
 
     # Elimina un mueble y actualiza la vista.
     def _delete_furniture(self, index):
