@@ -1,0 +1,460 @@
+
+import json
+from math import isfinite
+
+#Persistencia de datos, guardando y recuperando datos con archivos JSON
+#Funciona cambiando los objetos a diccionarios y listas
+#Guardado
+#Habitacion -> Mueble -> Punto3D -> Diccionario -> JSON
+#Carga
+#JSON -> Diccionario -> Punto3D -> Mueble -> Habitacion
+
+from habitacion import Habitacion
+from mueble import Mueble
+from punto3d import Punto3D
+from restriccion import Restriccion
+from outlet import Outlet
+
+
+# Validar números y dimensiones
+
+def validar_numero_positivo(numero):
+    #Verifica que sea un número positivo y finito
+    if isinstance(numero, bool) or not isinstance(numero, (int, float)):
+        raise ValueError("El valor debe ser numerico.")
+
+    if not isfinite(numero) or numero <= 0:
+        raise ValueError("La dimension debe ser mayor que cero.")
+
+    return True
+
+
+# Convertir a Diccionarios (cada uno)
+
+def punto_a_diccionario(punto):
+    return {
+        "x": punto.get_x(),
+        "y": punto.get_y(),
+        "z": punto.get_z()
+    }
+
+
+def mueble_a_diccionario(mueble):
+    return {
+        "nombre": mueble.nombre,
+        "ancho": mueble.ancho,
+        "largo": mueble.largo,
+        "alto": mueble.alto,
+        "utilidad": mueble.utilidad,
+        "uso": mueble.uso,
+        "posicion": punto_a_diccionario(mueble.posicion),
+        # Guarda las conexiones electricas del mueble.
+        "conexiones_necesarias": mueble.get_conexiones_necesarias(),
+        # Conserva la orientacion y el permiso de rotacion del mueble.
+        "rotacion": mueble.get_rotacion(),
+        "permite_rotacion": mueble.puede_rotar(),
+        "tipo_colocacion": mueble.get_placement_type(),
+        "puede_sostener_objetos": mueble.can_support_objects(),
+        "pared_preferida": mueble.get_preferred_wall(),
+        "altura_pared": mueble.get_wall_height(),
+
+        # Guarda si debe conservar su posicion en nuevas alternativas.
+        "fijado": mueble.esta_fijado(),
+
+        # Guarda la preferencia de distancia a las paredes.
+        # Permite recuperar la configuracion elegida por el usuario.
+        "preferencia_pared": mueble.get_preferencia_pared()
+
+    }
+
+
+def restriction_to_dictionary(restriction):
+    return {
+        "tipo": restriction.tipo,
+        "pared": restriction.pared,
+        "seccion": restriction.seccion,
+        "ancho": restriction.ancho,
+        "alto": restriction.alto,
+        "profundidad": restriction.profundidad,
+        "posicion": punto_a_diccionario(restriction.posicion)
+    }
+
+
+# Convierte un outlet en datos compatibles con JSON.
+def outlet_a_diccionario(outlet):
+    return {
+        "nombre": outlet.nombre,
+        "pared": outlet.pared,
+        "posicion": punto_a_diccionario(outlet.posicion),
+        "capacidad": outlet.capacidad
+    }
+
+
+def habitacion_a_diccionario(habitacion):
+    muebles = []
+
+    #para cada mueble...
+    for mueble in habitacion.get_muebles():
+        muebles.append(mueble_a_diccionario(mueble))
+
+    restrictions = [
+        restriction_to_dictionary(restriction)
+        for restriction in habitacion.get_restricciones()
+    ]
+
+    # Guarda los outlets propuestos conjuntamente por Raul y Dominic.
+    outlets = [
+        outlet_a_diccionario(outlet)
+        for outlet in habitacion.get_outlets()
+    ]
+
+    return {
+        "nombre": habitacion.get_nombre(),
+        "ancho": habitacion.get_ancho(),
+        "largo": habitacion.get_largo(),
+        "alto": habitacion.get_alto(),
+        "muebles": muebles,
+        "restricciones": restrictions,
+        "outlets": outlets
+    }
+
+
+# Guardar un Proyecto
+
+def guardar_proyecto(habitacion, nombre_archivo):
+    #Guarda los datos en un archivo JSON, con habitación y nombre de archivo.
+    #W permite crear o sobreescribir el archivo
+    try:
+        datos = habitacion_a_diccionario(habitacion)
+
+        #Validar los datos antes de guardarlos
+        diccionario_a_habitacion(datos)
+
+        #Abrir el archivo y escribir los datos
+        with open(nombre_archivo, "w", encoding="utf-8") as archivo:
+            json.dump(
+                datos,
+                archivo,
+                indent=4,
+                ensure_ascii=False,
+                allow_nan=False
+            )
+
+        print(f"Proyecto guardado correctamente en: {nombre_archivo}")
+        return True
+
+    #Controlar errores de escritura o datos incorrectos
+    except (OSError, ValueError, TypeError, KeyError, AttributeError) as error:
+        print(f"Error al guardar el proyecto: {error}")
+        return False
+
+
+# De diccionarios a objetos
+
+def diccionario_a_punto(datos):
+    #Verificar que las coordenadas sean válidas
+    if not isinstance(datos, dict):
+        raise ValueError("La posicion debe ser un diccionario.")
+
+    for eje in ("x", "y", "z"):
+        valor = datos[eje]
+
+        if isinstance(valor, bool) or not isinstance(valor, (int, float)):
+            raise ValueError("Las coordenadas deben ser numericas.")
+
+        if not isfinite(valor):
+            raise ValueError("Las coordenadas deben ser finitas.")
+
+    return Punto3D(
+        datos["x"],
+        datos["y"],
+        datos["z"]
+    )
+
+
+def diccionario_a_mueble(datos):
+    #Reconstruir muebles
+    if not isinstance(datos, dict):
+        raise ValueError("Los datos del mueble deben ser un diccionario.")
+
+    #Verificar las dimensiones del mueble
+    validar_numero_positivo(datos["ancho"])
+    validar_numero_positivo(datos["largo"])
+    validar_numero_positivo(datos["alto"])
+
+    #Verificar la utilidad entre 1 y 10
+    utilidad = datos["utilidad"]
+
+    if type(utilidad) is not int or not 1 <= utilidad <= 10:
+        raise ValueError("La utilidad debe ser un entero entre 1 y 10.")
+
+    #Verificar nombre y uso del mueble
+    if not isinstance(datos["nombre"], str) or not datos["nombre"].strip():
+        raise ValueError("El nombre del mueble no es valido.")
+
+    if not isinstance(datos["uso"], str) or not datos["uso"].strip():
+        raise ValueError("El uso del mueble no es valido.")
+
+    posicion = diccionario_a_punto(datos["posicion"])
+
+    # Los proyectos antiguos utilizan cero conexiones por defecto.
+    conexiones = datos.get("conexiones_necesarias", 0)
+
+    # Las dimensiones del JSON ya corresponden a la orientacion guardada.
+    # Se crea a 0 grados y luego se intercambian las medidas solo si hace falta.
+    rotacion = datos.get("rotacion", 0)
+    permite_rotacion = datos.get("permite_rotacion", True)
+    placement_type = datos.get("tipo_colocacion", "Suelo")
+    supports_objects = datos.get("puede_sostener_objetos", False)
+    preferred_wall = datos.get("pared_preferida", "Automática")
+    wall_height = datos.get("altura_pared", 0.0)
+    fijado = datos.get("fijado", False)    
+    # Recupera la preferencia o utiliza el valor predeterminado.
+    # Los proyectos antiguos no tienen este atributo.
+    preferencia_pared = datos.get("preferencia_pared", "Sin preferencia")
+    if type(fijado) is not bool:
+        raise ValueError("Fijado debe ser True o False.")
+    if type(rotacion) is not int or rotacion not in (0, 90):
+        raise ValueError("La rotacion debe ser 0 o 90 grados.")
+    if type(permite_rotacion) is not bool:
+        raise ValueError("Permite rotacion debe ser True o False.")
+
+    # Recupera las dimensiones originales para evitar un segundo giro.
+    ancho_original = datos["largo"] if rotacion == 90 else datos["ancho"]
+    largo_original = datos["ancho"] if rotacion == 90 else datos["largo"]
+
+    return Mueble(
+        datos["nombre"],
+        ancho_original,
+        largo_original,
+        datos["alto"],
+        datos["utilidad"],
+        posicion,
+        datos["uso"],
+        conexiones_necesarias=conexiones,
+        permite_rotacion=permite_rotacion,
+        rotacion=rotacion,
+        placement_type=placement_type,
+        supports_objects=supports_objects,
+        preferred_wall=preferred_wall,
+        wall_height=wall_height,
+        fijado=fijado,
+        # Reconstruye la preferencia guardada en el proyecto.
+        preferencia_pared=preferencia_pared
+
+    )
+
+
+def dictionary_to_restriction(data):
+    if not isinstance(data, dict):
+        raise ValueError("La restricción debe ser un diccionario.")
+
+    for field in ("ancho", "alto", "profundidad"):
+        validar_numero_positivo(data[field])
+
+    if data["tipo"] not in Restriccion.VALID_TYPES:
+        raise ValueError("Tipo de restricción inválido.")
+
+    if data["pared"] not in Restriccion.VALID_WALLS:
+        raise ValueError("Pared de restricción inválida.")
+
+    if data["seccion"] not in Restriccion.VALID_SECTIONS:
+        raise ValueError("Sección de restricción inválida.")
+
+    return Restriccion(
+        data["tipo"],
+        data["pared"],
+        data["seccion"],
+        data["ancho"],
+        data["alto"],
+        data["profundidad"],
+        diccionario_a_punto(data["posicion"])
+    )
+
+
+# Reconstruye un outlet y valida sus atributos.
+def diccionario_a_outlet(datos):
+    if not isinstance(datos, dict):
+        raise ValueError("El outlet debe ser un diccionario.")
+
+    return Outlet(
+        datos["nombre"],
+        datos["pared"],
+        diccionario_a_punto(datos["posicion"]),
+        datos["capacidad"]
+    )
+
+
+def diccionario_a_habitacion(datos):
+    #Crea una habitación vacía
+    if not isinstance(datos, dict):
+        raise ValueError("Los datos de la habitacion deben ser un diccionario.")
+
+    #Verificar las dimensiones de la habitacion
+    validar_numero_positivo(datos["ancho"])
+    validar_numero_positivo(datos["largo"])
+    validar_numero_positivo(datos["alto"])
+
+    #Verificar el nombre de la habitacion
+    if not isinstance(datos["nombre"], str) or not datos["nombre"].strip():
+        raise ValueError("El nombre de la habitacion no es valido.")
+
+    #Verificar que muebles sea una lista
+    if not isinstance(datos["muebles"], list):
+        raise ValueError("Los muebles deben estar en una lista.")
+
+    habitacion = Habitacion(
+        datos["nombre"],
+        datos["ancho"],
+        datos["largo"],
+        datos["alto"]
+    )
+
+    #y agrega cada mueble
+    for datos_mueble in datos["muebles"]:
+        mueble = diccionario_a_mueble(datos_mueble)
+        habitacion.agregar_mueble(mueble)
+
+    restrictions = datos.get("restricciones", [])
+
+    if not isinstance(restrictions, list):
+        raise ValueError("Las restricciones deben estar en una lista.")
+
+    for restriction_data in restrictions:
+        habitacion.agregar_restriccion(
+            dictionary_to_restriction(restriction_data)
+        )
+
+    # Recupera outlets o utiliza una lista vacia en proyectos antiguos.
+    outlets = datos.get("outlets", [])
+
+    if not isinstance(outlets, list):
+        raise ValueError("Los outlets deben estar en una lista.")
+
+    for datos_outlet in outlets:
+        outlet = diccionario_a_outlet(datos_outlet)
+        # Comprueba que cada outlet corresponda a una pared.
+        habitacion.agregar_outlet(outlet)
+
+    return habitacion
+
+
+# Cargar Proyecto
+
+def cargar_proyecto(nombre_archivo):
+    #Cargar un archivo JSON
+    try:
+        #Abrir el archivo JSON para lectura
+        with open(nombre_archivo, "r", encoding="utf-8") as archivo:
+            datos = json.load(archivo)
+
+        #Reconstruir los objetos EasySpacey
+        habitacion = diccionario_a_habitacion(datos)
+
+        print(f"Proyecto cargado correctamente desde: {nombre_archivo}")
+
+        return habitacion
+
+    #A menos que no lo encuentre
+    except FileNotFoundError:
+        print("Error: No se encontro el archivo.")
+        return None
+
+    #O que no cumpla con el formato
+    except json.JSONDecodeError:
+        print("Error: El archivo JSON no tiene un formato valido.")
+        return None
+
+    #O que falten datos obligatorios
+    except (KeyError, TypeError, ValueError) as error:
+        print(f"Error: Los datos del proyecto no son validos: {error}")
+        return None
+
+    #O que exista un problema al leer el archivo
+    except (OSError, UnicodeError) as error:
+        print(f"Error al leer el archivo: {error}")
+        return None
+
+
+# PRUEBA
+
+if __name__ == "__main__":
+
+    # Crear habitacion
+    habitacion = Habitacion(
+        "Mi cuarto",
+        5,
+        4,
+        3
+    )
+
+    # Crear cama
+    cama = Mueble(
+        "Cama",
+        2.0,
+        1.5,
+        0.6,
+        10,
+        Punto3D(1, 1, 0),
+        "Dormir"
+    )
+
+    # Crear escritorio con conexiones electricas
+    escritorio = Mueble(
+        "Escritorio",
+        1.2,
+        0.6,
+        0.75,
+        8,
+        Punto3D(3, 2, 0),
+        "Trabajar/Estudiar",
+        conexiones_necesarias=2
+    )
+
+    # Agregar muebles a la habitacion
+    habitacion.agregar_mueble(cama)
+    habitacion.agregar_mueble(escritorio)
+
+    # Registrar un outlet en la pared superior
+    outlet = Outlet(
+        "Outlet 1",
+        "Superior",
+        Punto3D(2, 0, 0.3),
+        2
+    )
+    habitacion.agregar_outlet(outlet)
+
+    # Mostrar datos originales
+    print("\n===== DATOS ORIGINALES =====")
+    print(habitacion)
+
+    for mueble in habitacion.get_muebles():
+        print(mueble)
+
+    # Mostrar las conexiones electricas
+    print("Conexiones necesarias:", habitacion.contar_conexiones_necesarias())
+    print("Conexiones disponibles:", habitacion.contar_conexiones_disponibles())
+    print("Conexiones faltantes:", habitacion.conexiones_faltantes())
+
+    # Guardar
+    guardar_proyecto(
+        habitacion,
+        "mi_cuarto.json"
+    )
+
+    # Cargar
+    habitacion_cargada = cargar_proyecto(
+        "mi_cuarto.json"
+    )
+
+    # Mostrar lo recuperado
+    if habitacion_cargada is not None:
+
+        print("\n===== DATOS RECUPERADOS =====")
+        print(habitacion_cargada)
+
+        for mueble in habitacion_cargada.get_muebles():
+            print(mueble)
+
+        print("Outlets recuperados:", len(habitacion_cargada.get_outlets()))
+        print("Conexiones recuperadas:", habitacion_cargada.contar_conexiones_necesarias())
