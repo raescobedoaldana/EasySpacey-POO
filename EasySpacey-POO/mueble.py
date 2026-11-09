@@ -23,6 +23,7 @@ class Mueble:
         supports_objects=False,
         preferred_wall="Automática",
         wall_height=0.0,
+        fijado=False,
     ):
         self.nombre = nombre
         #características principales, ahora iniciadas
@@ -44,6 +45,18 @@ class Mueble:
         self.set_supports_objects(supports_objects)
         self.set_preferred_wall(preferred_wall)
         self.set_wall_height(wall_height)
+        # Permite conservar la posicion del mueble al generar alternativas.
+        self.set_fijado(fijado)
+
+    # Fija o libera el mueble sin alterar sus coordenadas.
+    def set_fijado(self, fijado):
+        if type(fijado) is not bool:
+            raise ValueError("Fijado debe ser True o False.")
+        self.fijado = fijado
+
+    # Indica si el generador debe respetar su posicion y orientacion.
+    def esta_fijado(self):
+        return self.fijado
 
     def calcular_volumen(self):
         return self.ancho * self.largo * self.alto

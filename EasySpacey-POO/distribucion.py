@@ -24,6 +24,9 @@ class Distribucion:
         source_furniture = room.get_muebles() if furniture is None else furniture
         # Evita que mover una alternativa cambie los muebles originales.
         self.muebles = deepcopy(source_furniture)
+        # Conserva el indice original aunque el algoritmo ordene los muebles.
+        for index, item in enumerate(self.muebles):
+            item._source_index = index
         self.puntaje = 0.0
         self.valida = False
 
@@ -182,11 +185,14 @@ class Distribucion:
         superficie_muebles = 0
 
         for mueble in muebles:
-            if (
-                mueble.ancho > habitacion.ancho
-                or mueble.largo > habitacion.largo
-                or mueble.alto > habitacion.alto
-            ):
+            # Un mueble girable puede caber solo al intercambiar ancho y largo.
+            cabe_actual = (mueble.ancho <= habitacion.ancho
+                           and mueble.largo <= habitacion.largo)
+            cabe_girado = (mueble.puede_rotar() and not mueble.esta_fijado()
+                           and mueble.largo <= habitacion.ancho
+                           and mueble.ancho <= habitacion.largo)
+            if (not (cabe_actual or cabe_girado)
+                    or mueble.alto > habitacion.alto):
                 return False
 
             if mueble.get_placement_type() == "Suelo":
@@ -383,7 +389,23 @@ class Distribucion:
             -item.calcular_volumen()
         ))
 
-        for furniture in self.muebles:
+        # Coloca primero los fijados para que los otros respeten su espacio.
+        pinned = [item for item in self.muebles if item.esta_fijado()]
+        free = [item for item in self.muebles if not item.esta_fijado()]
+        # Los apoyos fijados deben existir antes de validar objetos apilados.
+        self.muebles = pinned + free
+        for item in pinned:
+            if not self.mueble_esta_dentro(item):
+                self.valida = False
+                return False
+            if self.overlaps_restrictions(item) or any(
+                self.muebles_se_traslapan(item, other) for other in placed_furniture
+            ):
+                self.valida = False
+                return False
+            placed_furniture.append(item)
+
+        for furniture in free:
             if furniture.get_placement_type() == "Pared":
                 if not self._place_on_wall(
                     furniture, placed_furniture, attempts_per_item, random_generator
@@ -728,3 +750,4 @@ class Distribucion:
                 f"Posición: {furniture.posicion}"
             )
         return "\n".join(lines)
+

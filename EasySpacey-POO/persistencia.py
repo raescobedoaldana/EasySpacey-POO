@@ -56,7 +56,9 @@ def mueble_a_diccionario(mueble):
         "tipo_colocacion": mueble.get_placement_type(),
         "puede_sostener_objetos": mueble.can_support_objects(),
         "pared_preferida": mueble.get_preferred_wall(),
-        "altura_pared": mueble.get_wall_height()
+        "altura_pared": mueble.get_wall_height(),
+        # Guarda si debe conservar su posicion en nuevas alternativas.
+        "fijado": mueble.esta_fijado()
     }
 
 
@@ -200,6 +202,9 @@ def diccionario_a_mueble(datos):
     supports_objects = datos.get("puede_sostener_objetos", False)
     preferred_wall = datos.get("pared_preferida", "Automática")
     wall_height = datos.get("altura_pared", 0.0)
+    fijado = datos.get("fijado", False)
+    if type(fijado) is not bool:
+        raise ValueError("Fijado debe ser True o False.")
     if type(rotacion) is not int or rotacion not in (0, 90):
         raise ValueError("La rotacion debe ser 0 o 90 grados.")
     if type(permite_rotacion) is not bool:
@@ -223,7 +228,8 @@ def diccionario_a_mueble(datos):
         placement_type=placement_type,
         supports_objects=supports_objects,
         preferred_wall=preferred_wall,
-        wall_height=wall_height
+        wall_height=wall_height,
+        fijado=fijado
     )
 
 

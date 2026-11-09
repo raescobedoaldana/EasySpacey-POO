@@ -951,7 +951,8 @@ class TkinterInterface:
             self.furniture_list, furniture,
             lambda item: (f"{item.nombre}\n{item.uso} · {item.ancho:g} × {item.largo:g} × {item.alto:g} m"
                           f"\n{item.get_placement_type()} · Sostiene objetos: "
-                          f"{'sí' if item.can_support_objects() else 'no'}"),
+                          f"{'sí' if item.can_support_objects() else 'no'}"
+                          f" · {'FIJADO' if item.esta_fijado() else 'Libre'}"),
             self._delete_furniture, "No hay muebles agregados.", self._edit_furniture
         )
         self._populate_list(
@@ -985,9 +986,60 @@ class TkinterInterface:
             else:
                 ttk.Label(row, text=description(item), style="ListText.TLabel",
                           justify="left").grid(row=0, column=0, sticky="w")
+            if edit_callback is not None:
+                # Fija la posicion de la alternativa visible o libera el mueble.
+                item_locked = item.esta_fijado()
+                ttk.Button(row, text="Soltar" if item_locked else "Fijar",
+                           command=lambda i=index: self._toggle_furniture_lock(i)).grid(
+                               row=0, column=1, padx=(3, 3))
             ttk.Button(row, text="×", width=3, style="Delete.TButton",
-                       command=lambda i=index: delete_callback(i)).grid(row=0, column=1, padx=(6, 0))
+                       command=lambda i=index: delete_callback(i)).grid(row=0, column=2, padx=(6, 0))
             ttk.Separator(target.content).grid(row=index * 2 + 1, column=0, sticky="ew")
+
+    # Fija la posicion elegida en la alternativa visible.
+    def _toggle_furniture_lock(self, index):
+        if self.room is None:
+            return
+        original = self.room.get_muebles()[index]
+        if original.esta_fijado():
+            original.set_fijado(False)
+            self._invalidate_distributions()
+            self._refresh_lists()
+            self._draw_preview()
+            self._set_status(f"Mueble '{original.nombre}' liberado.")
+            return
+        if not self.distributions:
+            self._set_status("Genere una alternativa antes de fijar un mueble.", True)
+            return
+
+        active = self.distributions[self.current_index]
+        source_map = {item._source_index: item for item in active.get_muebles()
+                      if hasattr(item, "_source_index")}
+        selected = source_map.get(index)
+        if selected is None:
+            self._set_status("No se encontro el mueble en la alternativa.", True)
+            return
+
+        # Si esta apilado, fija tambien el soporte para no dejarlo flotando.
+        to_pin = [index]
+        if selected.get_placement_type() == "Sobre objeto":
+            support = active._supporting_furniture(selected)
+            if support is None or not hasattr(support, "_source_index"):
+                self._set_status("No se encontro el soporte del mueble.", True)
+                return
+            to_pin.append(support._source_index)
+
+        # Aplica la posicion de la alternativa a los objetos originales.
+        for source_index in to_pin:
+            model = self.room.get_muebles()[source_index]
+            placed = source_map[source_index]
+            model.set_rotacion(placed.get_rotacion())
+            model.set_posicion(copy.deepcopy(placed.posicion))
+            model.set_fijado(True)
+        self._invalidate_distributions()
+        self._refresh_lists()
+        self._draw_preview()
+        self._set_status("Mueble fijado. Genere alternativas para mover los demas.")
 
     # Abre una ventana para modificar un mueble sin borrarlo.
     def _edit_furniture(self, index):
@@ -1095,6 +1147,8 @@ class TkinterInterface:
                 )
                 # Conserva la orientación anterior si el nuevo permiso lo permite.
                 candidate.set_rotacion(original.get_rotacion())
+                # Al editar medidas o colocacion se libera para evitar fijaciones invalidas.
+                candidate.set_fijado(False)
                 # La lista original se actualiza solo después de validar todo.
                 self.room.get_muebles()[index] = candidate
                 self._invalidate_distributions()
