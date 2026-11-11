@@ -1,6 +1,7 @@
 from copy import deepcopy
 from math import ceil, floor, hypot
 from random import Random
+from collections import deque
 
 from punto3d import Punto3D
 
@@ -17,6 +18,19 @@ class Distribucion:
     GRID_STEP = 0.01
     # Peso de la cercania electrica acordada por Raul y Dominic.
     ELECTRICAL_PROXIMITY_WEIGHT = 8.0
+    # Ancho minimo deseado para caminar dentro de la habitacion.
+    MINIMUM_WALKWAY_WIDTH = 0.80
+
+    # Resolucion utilizada para analizar la circulacion.
+    # Es mayor que 1 cm para evitar demasiados calculos.
+    WALKWAY_GRID_STEP = 0.10
+
+    # Altura libre minima que consideramos para caminar.
+    WALKWAY_CLEAR_HEIGHT = 2.00
+
+    # Penaliza fuertemente las distribuciones con mala circulacion.
+    # No invalida automaticamente la alternativa.
+    WALKWAY_BLOCKED_PENALTY = 100.0    
 
     # Inicializa una distribucion con copias independientes de muebles.
     def __init__(self, room, furniture=None):
@@ -162,6 +176,208 @@ class Distribucion:
             for restriction in self.habitacion.get_restricciones()
         )
 
+
+    # Comprueba si existe una zona transitable desde alguna puerta.
+    # Se utiliza una cuadricula simplificada para conservar el rendimiento.
+    def verificar_circulacion(self):
+        room = self.habitacion
+
+        # Si no existen puertas, no podemos determinar una entrada.
+        # Por ahora no penalizamos habitaciones sin puertas registradas.
+        puertas = [
+            r for r in room.get_restricciones()
+            if r.tipo == "Puerta"
+        ]
+
+        if not puertas:
+            return True
+
+        paso = self.WALKWAY_GRID_STEP
+        ancho_paso = self.MINIMUM_WALKWAY_WIDTH
+        radio = ancho_paso / 2
+
+        columnas = floor(room.ancho / paso)
+        filas = floor(room.largo / paso)
+
+        # Una habitacion demasiado estrecha no permite el paso solicitado.
+        if columnas <= 0 or filas <= 0:
+            return False
+
+        # Calcula el espacio ocupado por los muebles a altura de paso.
+        # Los objetos elevados no bloquean si dejan altura suficiente.
+        obstaculos = []
+
+        for mueble in self.muebles:
+            inferior = mueble.posicion.z
+            superior = inferior + mueble.alto
+
+            if inferior >= self.WALKWAY_CLEAR_HEIGHT:
+                continue
+
+            if superior <= 0:
+                continue
+
+            obstaculos.append((
+                mueble.posicion.x,
+                mueble.posicion.y,
+                mueble.posicion.x + mueble.ancho,
+                mueble.posicion.y + mueble.largo
+            ))
+
+        # Comprueba que una persona pueda ocupar una celda.
+        # Se deja un margen alrededor para representar el ancho del cuerpo.
+        def celda_libre(columna, fila):
+            x = (columna + 0.5) * paso
+            y = (fila + 0.5) * paso
+
+            # Evita que el espacio de paso atraviese las paredes.
+            if (
+                x - radio < 0
+                or y - radio < 0
+                or x + radio > room.ancho
+                or y + radio > room.largo
+            ):
+                return False
+
+            for x1, y1, x2, y2 in obstaculos:
+                # Comprueba si el espacio necesario invade un mueble.
+                if (
+                    x + radio > x1
+                    and x - radio < x2
+                    and y + radio > y1
+                    and y - radio < y2
+                ):
+                    return False
+
+            return True
+
+        # Guarda las celdas transitables para no repetir los calculos.
+        libres = set()
+
+        for fila in range(filas):
+            for columna in range(columnas):
+                if celda_libre(columna, fila):
+                    libres.add((columna, fila))
+
+        if not libres:
+            return False
+
+        # Busca las celdas que pueden alcanzarse desde las puertas.
+        entradas = set()
+
+        for puerta in puertas:
+            x = puerta.posicion.x
+            y = puerta.posicion.y
+
+            if puerta.pared in ("Superior", "Inferior"):
+                
+                # Calcula el centro de la abertura horizontal.
+                # La posicion inferior incluye la profundidad libre.
+                centro_x = puerta.posicion.x + puerta.ancho / 2
+
+                centro_y = (
+                    radio
+                    if puerta.pared == "Superior"
+                    else room.largo - radio
+                )
+
+
+                # Una abertura estrecha no permite el ancho solicitado.
+                if puerta.ancho < ancho_paso:
+                    continue
+
+            else:
+                centro_y = y + puerta.ancho / 2
+                centro_x = (
+                    radio if puerta.pared == "Izquierda"
+                    else room.ancho - radio
+                )
+
+                if puerta.ancho < ancho_paso:
+                    continue
+
+            columna = min(columnas - 1, max(0, int(centro_x / paso)))
+            fila = min(filas - 1, max(0, int(centro_y / paso)))
+
+            if (columna, fila) in libres:
+                entradas.add((columna, fila))
+
+        # Si ninguna entrada tiene espacio libre, no existe acceso.
+        if not entradas:
+            return False
+
+        # BFS recorre las celdas conectadas desde las entradas.
+        pendientes = deque(entradas)
+        visitadas = set(entradas)
+
+        movimientos = (
+            (1, 0),
+            (-1, 0),
+            (0, 1),
+            (0, -1)
+        )
+
+        while pendientes:
+            columna, fila = pendientes.popleft()
+
+            for dx, dy in movimientos:
+                siguiente = (columna + dx, fila + dy)
+
+                if siguiente not in libres:
+                    continue
+
+                if siguiente in visitadas:
+                    continue
+
+                visitadas.add(siguiente)
+                pendientes.append(siguiente)
+
+        
+        # Comprueba que exista una zona de circulacion desde la entrada.
+        if not visitadas:
+            return False
+
+        # Revisa que cada mueble de suelo tenga al menos un lado accesible.
+        # No exige caminar por todos sus lados, solamente poder llegar a uno.
+        for mueble in self.muebles:
+
+            # Los objetos apilados y los muebles de pared no necesitan
+            # una ruta independiente desde el suelo.
+            if mueble.get_placement_type() != "Suelo":
+                continue
+
+            x1 = mueble.posicion.x
+            y1 = mueble.posicion.y
+            x2 = x1 + mueble.ancho
+            y2 = y1 + mueble.largo
+
+            accesible = False
+
+            # Busca celdas transitables junto a cualquiera de sus lados.
+            for columna, fila in visitadas:
+                x = (columna + 0.5) * paso
+                y = (fila + 0.5) * paso
+
+                # Comprueba si la persona puede acercarse al mueble.
+                distancia_x = max(x1 - x, x - x2, 0.0)
+                distancia_y = max(y1 - y, y - y2, 0.0)
+
+                distancia = hypot(distancia_x, distancia_y)
+
+                # El centro de la persona debe poder acercarse
+                # sin invadir el espacio ocupado por el mueble.
+                if distancia <= radio + paso:
+                    accesible = True
+                    break
+
+            if not accesible:
+                return False
+
+        # La distribucion permite acceder a los muebles desde una puerta.
+        return True
+
+
+    
     # Valida limites, traslapes y restricciones.
     def validar(self):
         all_inside = all(
@@ -572,14 +788,41 @@ class Distribucion:
                 self.habitacion.ancho - (position.x + furniture.ancho),
                 self.habitacion.largo - (position.y + furniture.largo),
             )
-            # Obtiene la distancia a la pared mas cercana.
-            nearest_wall_distance = min(wall_distances)
-            wall_bonus = furniture.utilidad / (1.0 + nearest_wall_distance)
-            score += furniture.utilidad + wall_bonus
 
-            score -= sum(
-                self._dead_gap_penalty(gap) for gap in wall_distances
-            )
+            # Evalua la distancia a paredes segun la preferencia del mueble.
+            # Evita favorecer paredes para muebles que necesitan espacio alrededor.
+            nearest_wall_distance = min(wall_distances)
+            score += furniture.utilidad
+
+            # Los muebles de pared deben permanecer junto a una pared.
+            # No se les aplica una preferencia que contradiga su colocacion.
+            if furniture.get_placement_type() == "Pared":
+                wall_bonus = furniture.utilidad / (1.0 + nearest_wall_distance)
+            else:
+                # Los muebles antiguos mantienen la bonificacion original.
+                preference = getattr(furniture, "preferencia_pared", "Cerca")
+
+                if preference == "Cerca":
+                    wall_bonus = furniture.utilidad / (1.0 + nearest_wall_distance)
+
+                elif preference == "Lejos":
+                    # La distancia normalizada evita favorecer habitaciones grandes.
+                    maximum_distance = min(
+                        (self.habitacion.ancho - furniture.ancho) / 2,
+                        (self.habitacion.largo - furniture.largo) / 2,
+                    )
+
+                    wall_bonus = (
+                        furniture.utilidad * nearest_wall_distance / maximum_distance
+                        if maximum_distance > 0 else 0.0
+                    )
+
+                else:
+                    # Sin preferencia no suma puntos por estar cerca o lejos.
+                    wall_bonus = 0.0
+
+            score += wall_bonus
+
 
         for index_a in range(len(self.muebles)):
             for index_b in range(index_a + 1, len(self.muebles)):
@@ -633,11 +876,18 @@ class Distribucion:
                 )
                 score += category_bonus
 
+        
         # Incorpora la cercania electrica al puntaje original.
         score += self.calcular_bonificacion_electrica()
 
+        # Comprueba que los muebles permitan circular desde las puertas.
+        # Se penaliza la distribucion, pero no se descarta automaticamente.
+        if not self.verificar_circulacion():
+            score -= self.WALKWAY_BLOCKED_PENALTY
+
         self.puntaje = round(score, 2)
         return self.puntaje
+
 
     # Identifica una configuración por mueble y coordenadas.
     # Crea una firma estable con nombres y posiciones redondeadas.

@@ -172,9 +172,18 @@ class TkinterInterface:
         self._build_lists()
 
         self.status_var = tk.StringVar(value="Cree una habitación para comenzar.")
+        
+        # Permite mostrar advertencias largas en varias lineas.
+        # Evita que los mensajes de electricidad y circulacion se corten.
         self.status_label = ttk.Label(
-            self.root, textvariable=self.status_var, style="Status.TLabel", anchor="w"
+            self.root,
+            textvariable=self.status_var,
+            style="Status.TLabel",
+            anchor="w",
+            justify="left",
+            wraplength=1050
         )
+
         self.status_label.grid(row=2, column=0, sticky="ew", padx=24, pady=(0, 10))
 
     # Actualiza el espacio desplazable cuando cambian los formularios.
@@ -260,6 +269,14 @@ class TkinterInterface:
             ("Dormir", "Comer", "Cocinar", "Descansar", "Trabajar",
              "Almacenamiento", "Decoración", "Iluminación"), 3, 1
         )
+                # Permite elegir si el mueble debe estar cerca o lejos de una pared.
+        # Se usa para mejorar las distribuciones segun su funcionamiento.
+        self.furniture_wall_preference = self._combo(
+            furniture_box, "Distancia a paredes",
+            Mueble.VALID_WALL_PREFERENCES, 9, 0
+        )
+        self.furniture_wall_preference.set("Sin preferencia")
+
         self.furniture_placement = self._combo(
             furniture_box, "Colocación", ("Suelo", "Sobre objeto", "Pared"), 5, 0
         )
@@ -605,13 +622,19 @@ class TkinterInterface:
             for number in range(1, quantity + 1):
                 item_name = name if quantity == 1 else f"{name} {number}"
                 self.room.agregar_mueble(
-                    Mueble(item_name, *dimensions, utility, Punto3D(0, 0, 0), use,
-                           conexiones_necesarias=connections,
-                           permite_rotacion=self.furniture_rotation.get(),
-                           placement_type=placement_type,
-                           supports_objects=self.furniture_supports.get(),
-                           preferred_wall=preferred_wall,
-                           wall_height=wall_height)
+                    Mueble(
+                        item_name, *dimensions, utility,
+                        Punto3D(0, 0, 0), use,
+                        conexiones_necesarias=connections,
+                        permite_rotacion=self.furniture_rotation.get(),
+                        placement_type=placement_type,
+                        supports_objects=self.furniture_supports.get(),
+                        preferred_wall=preferred_wall,
+                        wall_height=wall_height,
+
+                        # Guarda la preferencia elegida para cada mueble.
+                        preferencia_pared=self.furniture_wall_preference.get()
+                    )
                 )
             self._invalidate_distributions()
             self._clear_entries(
@@ -620,6 +643,8 @@ class TkinterInterface:
             )
             self.furniture_use.set("")
             self.furniture_rotation.set(True)
+            # Restablece la preferencia despues de agregar los muebles.
+            self.furniture_wall_preference.set("Sin preferencia")
             self.furniture_placement.set("")
             self.furniture_supports.set(False)
             self.furniture_wall.set("")
@@ -938,6 +963,28 @@ class TkinterInterface:
         missing = self.room.conexiones_faltantes()
         return f"Advertencia: faltan {missing} conexion(es)." if missing else "Conexiones suficientes."
 
+
+    # Advierte si la alternativa tiene problemas de circulacion.
+    # No bloquea la distribucion porque es una preferencia funcional.
+    def _circulation_warning(self):
+        if not self.distributions:
+            return ""
+
+        # Revisa solamente la alternativa que el usuario esta viendo.
+        distribucion = self.distributions[self.current_index]
+
+        if not any(
+            restriccion.tipo == "Puerta"
+            for restriccion in distribucion.habitacion.get_restricciones()
+        ):
+            return "Circulacion: sin puertas registradas."
+
+        if distribucion.verificar_circulacion():
+            return "Circulacion: paso disponible."
+
+        return "Advertencia: circulacion insuficiente (paso de 80 cm)."
+
+
     # Reconstruye las listas con los elementos actuales.
     def _refresh_lists(self):
         # Elimina las filas anteriores antes de actualizar.
@@ -1097,6 +1144,25 @@ class TkinterInterface:
         wall = ttk.Combobox(panel, state="readonly", values=Mueble.VALID_WALLS)
         wall.set(original.get_preferred_wall())
         wall.grid(row=9, column=1, sticky="ew", padx=(8, 0), pady=5)
+        
+        # Muestra la preferencia actual del mueble al editarlo.
+        ttk.Label(panel, text="Distancia a paredes").grid(
+            row=12, column=0, sticky="w", pady=5
+        )
+
+        wall_preference = ttk.Combobox(
+            panel,
+            state="readonly",
+            values=Mueble.VALID_WALL_PREFERENCES
+        )
+
+        wall_preference.set(original.get_preferencia_pared())
+
+        wall_preference.grid(
+            row=12, column=1, sticky="ew",
+            padx=(8, 0), pady=5
+        )
+
 
         rotate = tk.BooleanVar(value=original.puede_rotar())
         support = tk.BooleanVar(value=original.can_support_objects())
@@ -1142,8 +1208,13 @@ class TkinterInterface:
                     permite_rotacion=rotate.get(),
                     placement_type=selected_placement,
                     supports_objects=support.get(),
+                    
                     preferred_wall=selected_wall,
-                    wall_height=wall_height
+                    wall_height=wall_height,
+
+                    # Conserva la preferencia seleccionada al editar.
+                    preferencia_pared=wall_preference.get()
+
                 )
                 # Conserva la orientación anterior si el nuevo permiso lo permite.
                 candidate.set_rotacion(original.get_rotacion())
@@ -1161,7 +1232,7 @@ class TkinterInterface:
                 messagebox.showerror("No se pudo editar el mueble", str(error), parent=window)
 
         buttons = ttk.Frame(panel)
-        buttons.grid(row=12, column=0, columnspan=2, sticky="ew", pady=(12, 4))
+        buttons.grid(row=13, column=0, columnspan=2, sticky="ew", pady=(12, 4))
         ttk.Button(buttons, text="Guardar cambios", command=save_changes).pack(side="left", padx=(0, 8))
         ttk.Button(buttons, text="Cancelar", command=window.destroy).pack(side="left")
 
@@ -1291,19 +1362,48 @@ class TkinterInterface:
         inicio_dibujo = perf_counter()
         self._draw_preview()
         print(f"[TIEMPO] Dibujo: {perf_counter() - inicio_dibujo:.4f} s")
-        self._set_status(f"{len(results)} alternativa(s) generada(s). {self._electrical_warning()}")
 
-    # Muestra la alternativa anterior, si existe.
+        # Informa sobre electricidad y circulacion al terminar.
+        self._set_status(
+            f"{len(results)} alternativa(s) generada(s). "
+            f"{self._electrical_warning()} "
+            f"{self._circulation_warning()}"
+        )
+
+
+    # Muestra la alternativa anterior y actualiza sus advertencias.
     def _previous(self):
         if self.distributions:
-            self.current_index = (self.current_index - 1) % len(self.distributions)
+            self.current_index = (
+                self.current_index - 1
+            ) % len(self.distributions)
+
             self._draw_preview()
 
+            # Cada alternativa puede tener una circulacion diferente.
+            self._set_status(
+                f"{self._electrical_warning()} "
+                f"{self._circulation_warning()}"
+            )
+
+
     # Muestra la alternativa siguiente, si existe.
+
+    # Muestra la alternativa siguiente y actualiza sus advertencias.
     def _next(self):
         if self.distributions:
-            self.current_index = (self.current_index + 1) % len(self.distributions)
+            self.current_index = (
+                self.current_index + 1
+            ) % len(self.distributions)
+
             self._draw_preview()
+
+            # Evita mostrar advertencias de la alternativa anterior.
+            self._set_status(
+                f"{self._electrical_warning()} "
+                f"{self._circulation_warning()}"
+            )
+
 
     # Solicita una ruta y guarda el proyecto en JSON.
     def _save(self):
