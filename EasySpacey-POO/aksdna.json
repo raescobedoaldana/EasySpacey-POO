@@ -1,0 +1,99 @@
+{
+    "nombre": "ear",
+    "ancho": 12.0,
+    "largo": 13.0,
+    "alto": 131.0,
+    "muebles": [
+        {
+            "nombre": "aoisjdka 1",
+            "ancho": 23.0,
+            "largo": 4124.0,
+            "alto": 1212.0,
+            "utilidad": 5,
+            "uso": "Almacenamiento",
+            "posicion": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        {
+            "nombre": "aoisjdka 2",
+            "ancho": 23.0,
+            "largo": 4124.0,
+            "alto": 1212.0,
+            "utilidad": 5,
+            "uso": "Almacenamiento",
+            "posicion": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        {
+            "nombre": "aoisjdka 3",
+            "ancho": 23.0,
+            "largo": 4124.0,
+            "alto": 1212.0,
+            "utilidad": 5,
+            "uso": "Almacenamiento",
+            "posicion": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        {
+            "nombre": "aoisjdka 4",
+            "ancho": 23.0,
+            "largo": 4124.0,
+            "alto": 1212.0,
+            "utilidad": 5,
+            "uso": "Almacenamiento",
+            "posicion": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        {
+            "nombre": "aoisjdka 5",
+            "ancho": 23.0,
+            "largo": 4124.0,
+            "alto": 1212.0,
+            "utilidad": 5,
+            "uso": "Almacenamiento",
+            "posicion": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        {
+            "nombre": "aoisjdka 6",
+            "ancho": 23.0,
+            "largo": 4124.0,
+            "alto": 1212.0,
+            "utilidad": 5,
+            "uso": "Almacenamiento",
+            "posicion": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        {
+            "nombre": "aoisjdka 7",
+            "ancho": 23.0,
+            "largo": 4124.0,
+            "alto": 1212.0,
+            "utilidad": 5,
+            "uso": "Almacenamiento",
+            "posicion": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        }
+    ]
+}

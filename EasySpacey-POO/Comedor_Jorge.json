@@ -1,0 +1,123 @@
+{
+    "nombre": "Comedor",
+    "ancho": 5.0,
+    "largo": 6.0,
+    "alto": 3.5,
+    "muebles": [
+        {
+            "nombre": "Mesa",
+            "ancho": 1.0,
+            "largo": 2.0,
+            "alto": 0.8,
+            "utilidad": 8,
+            "uso": "Comer",
+            "posicion": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "conexiones_necesarias": 0,
+            "rotacion": 0,
+            "permite_rotacion": true,
+            "tipo_colocacion": "Suelo",
+            "puede_sostener_objetos": true,
+            "pared_preferida": "Automática",
+            "altura_pared": 0.0,
+            "fijado": false,
+            "preferencia_pared": "Lejos"
+        },
+        {
+            "nombre": "MuebleTV",
+            "ancho": 0.4,
+            "largo": 0.7,
+            "alto": 1.2,
+            "utilidad": 4,
+            "uso": "Decoración",
+            "posicion": {
+                "x": 0.0,
+                "y": 2.74,
+                "z": 0.0
+            },
+            "conexiones_necesarias": 1,
+            "rotacion": 90,
+            "permite_rotacion": true,
+            "tipo_colocacion": "Suelo",
+            "puede_sostener_objetos": true,
+            "pared_preferida": "Automática",
+            "altura_pared": 0.0,
+            "fijado": true,
+            "preferencia_pared": "Cerca"
+        },
+        {
+            "nombre": "Gavetero",
+            "ancho": 0.4,
+            "largo": 1.5,
+            "alto": 1.4,
+            "utilidad": 4,
+            "uso": "Almacenamiento",
+            "posicion": {
+                "x": 0.0,
+                "y": 1.24,
+                "z": 0.0
+            },
+            "conexiones_necesarias": 1,
+            "rotacion": 90,
+            "permite_rotacion": true,
+            "tipo_colocacion": "Suelo",
+            "puede_sostener_objetos": true,
+            "pared_preferida": "Automática",
+            "altura_pared": 0.0,
+            "fijado": true,
+            "preferencia_pared": "Cerca"
+        },
+        {
+            "nombre": "Gavetero2",
+            "ancho": 1.1,
+            "largo": 0.3,
+            "alto": 1.6,
+            "utilidad": 4,
+            "uso": "Almacenamiento",
+            "posicion": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "conexiones_necesarias": 0,
+            "rotacion": 0,
+            "permite_rotacion": true,
+            "tipo_colocacion": "Suelo",
+            "puede_sostener_objetos": false,
+            "pared_preferida": "Automática",
+            "altura_pared": 0.0,
+            "fijado": false,
+            "preferencia_pared": "Cerca"
+        }
+    ],
+    "restricciones": [
+        {
+            "tipo": "Puerta",
+            "pared": "Inferior",
+            "seccion": "Personalizada",
+            "ancho": 1.5,
+            "alto": 2.2,
+            "profundidad": 1.5,
+            "posicion": {
+                "x": 1.79,
+                "y": 4.5,
+                "z": 0.0
+            }
+        }
+    ],
+    "outlets": [
+        {
+            "nombre": "T1",
+            "pared": "Izquierda",
+            "posicion": {
+                "x": 0,
+                "y": 2.75,
+                "z": 0.3
+            },
+            "capacidad": 2
+        }
+    ]
+}

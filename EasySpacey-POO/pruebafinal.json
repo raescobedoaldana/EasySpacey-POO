@@ -1,0 +1,35 @@
+{
+    "nombre": "Prueba",
+    "ancho": 5.0,
+    "largo": 4.0,
+    "alto": 3.0,
+    "muebles": [
+        {
+            "nombre": "Escritorio",
+            "ancho": 2.0,
+            "largo": 1.0,
+            "alto": 1.0,
+            "utilidad": 10,
+            "uso": "Trabajar",
+            "posicion": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "conexiones_necesarias": 2
+        }
+    ],
+    "restricciones": [],
+    "outlets": [
+        {
+            "nombre": "ased",
+            "pared": "Inferior",
+            "posicion": {
+                "x": 1.0,
+                "y": 4.0,
+                "z": 1.0
+            },
+            "capacidad": 1
+        }
+    ]
+}

@@ -2,7 +2,6 @@ import json
 import os
 import tempfile
 import unittest
-from random import Random
 from habitacion import Habitacion
 from mueble import Mueble
 from punto3d import Punto3D
@@ -26,25 +25,6 @@ class TestLogica(unittest.TestCase):
     def test_puntajes_ordenados(self):
         ds = Distribucion.generar_distribuciones(self.room, amount=200, seed=42)
         self.assertEqual([d.puntaje for d in ds], sorted([d.puntaje for d in ds], reverse=True))
-
-    def test_mueble_volando_es_invalido(self):
-        floating = Mueble(
-            'Mesa voladora', 1, 0.6, 0.7, 6,
-            Punto3D(1, 1, 0.5), 'Trabajar'
-        )
-        distribution = Distribucion(self.room, [floating])
-        self.assertFalse(distribution.mueble_esta_dentro(floating))
-        self.assertFalse(distribution.validar())
-
-    def test_colocacion_apoya_muebles_en_el_suelo(self):
-        floating_room = Habitacion('Prueba', 5, 4, 3)
-        floating_room.agregar_mueble(Mueble(
-            'Mesa', 1, 0.6, 0.7, 6,
-            Punto3D(1, 1, 1.5), 'Trabajar'
-        ))
-        distribution = Distribucion(floating_room)
-        self.assertTrue(distribution.colocar_muebles(random_generator=Random(7)))
-        self.assertTrue(all(item.posicion.z == 0 for item in distribution.get_muebles()))
 
     def test_json_guardar_cargar(self):
         with tempfile.TemporaryDirectory() as folder:

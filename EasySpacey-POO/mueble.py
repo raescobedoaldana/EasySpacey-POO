@@ -1,9 +1,14 @@
+
 from punto3d import Punto3D
 
 
 class Mueble:
     VALID_PLACEMENT_TYPES = ("Suelo", "Sobre objeto", "Pared")
     VALID_WALLS = ("Automática", "Superior", "Inferior", "Izquierda", "Derecha")
+
+    # Define las preferencias permitidas de distancia a las paredes.
+    VALID_WALL_PREFERENCES = ("Cerca", "Lejos", "Sin preferencia")
+
         #Un mueble dentro de EasySpacey
         #Esto hará un prisma rectángular con sus dimensiones
 
@@ -24,6 +29,7 @@ class Mueble:
         preferred_wall="Automática",
         wall_height=0.0,
         fijado=False,
+        preferencia_pared="Sin preferencia",
     ):
         self.nombre = nombre
         #características principales, ahora iniciadas
@@ -33,11 +39,14 @@ class Mueble:
         self.utilidad = utilidad
         self.posicion = posicion
         self.uso = uso
+
         # Necesidades electricas propuestas conjuntamente por Raul y Dominic.
         self.set_conexiones_necesarias(conexiones_necesarias)
+
         # Permite o bloquea la rotacion automatica de este mueble.
         if type(permite_rotacion) is not bool:
             raise ValueError("Permite rotacion debe ser True o False.")
+
         self.permite_rotacion = permite_rotacion
         self.rotacion = 0
         self.set_rotacion(rotacion)
@@ -45,8 +54,13 @@ class Mueble:
         self.set_supports_objects(supports_objects)
         self.set_preferred_wall(preferred_wall)
         self.set_wall_height(wall_height)
+
         # Permite conservar la posicion del mueble al generar alternativas.
         self.set_fijado(fijado)
+
+        # Guarda si el mueble prefiere estar cerca o lejos de las paredes.
+        # Se agrega para evitar que todos los muebles favorezcan las paredes.
+        self.set_preferencia_pared(preferencia_pared)
 
     # Fija o libera el mueble sin alterar sus coordenadas.
     def set_fijado(self, fijado):
@@ -169,6 +183,17 @@ class Mueble:
     def get_wall_height(self):
         return self.wall_height
 
+    # Cambia la preferencia de distancia a las paredes.
+    # No modifica la posicion, solo guarda una preferencia para el algoritmo.
+    def set_preferencia_pared(self, preferencia):
+        if not isinstance(preferencia, str) or preferencia not in self.VALID_WALL_PREFERENCES:
+            raise ValueError("La preferencia de pared no es valida.")
+        self.preferencia_pared = preferencia
+
+    # Devuelve la preferencia actual del mueble.
+    def get_preferencia_pared(self):
+        return self.preferencia_pared
+
     def __str__(self):
         #representación textual del mueble
         return (
@@ -177,6 +202,7 @@ class Mueble:
             f"Colocacion: {self.placement_type} | "
             f"Posición: {self.posicion}"
         )
+
 
 #PRUEBA (no hace más allá que ser nuestra prueba y prototipo)
 if __name__ == "__main__":

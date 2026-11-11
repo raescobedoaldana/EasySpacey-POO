@@ -57,8 +57,14 @@ def mueble_a_diccionario(mueble):
         "puede_sostener_objetos": mueble.can_support_objects(),
         "pared_preferida": mueble.get_preferred_wall(),
         "altura_pared": mueble.get_wall_height(),
+
         # Guarda si debe conservar su posicion en nuevas alternativas.
-        "fijado": mueble.esta_fijado()
+        "fijado": mueble.esta_fijado(),
+
+        # Guarda la preferencia de distancia a las paredes.
+        # Permite recuperar la configuracion elegida por el usuario.
+        "preferencia_pared": mueble.get_preferencia_pared()
+
     }
 
 
@@ -202,7 +208,10 @@ def diccionario_a_mueble(datos):
     supports_objects = datos.get("puede_sostener_objetos", False)
     preferred_wall = datos.get("pared_preferida", "Automática")
     wall_height = datos.get("altura_pared", 0.0)
-    fijado = datos.get("fijado", False)
+    fijado = datos.get("fijado", False)    
+    # Recupera la preferencia o utiliza el valor predeterminado.
+    # Los proyectos antiguos no tienen este atributo.
+    preferencia_pared = datos.get("preferencia_pared", "Sin preferencia")
     if type(fijado) is not bool:
         raise ValueError("Fijado debe ser True o False.")
     if type(rotacion) is not int or rotacion not in (0, 90):
@@ -229,7 +238,10 @@ def diccionario_a_mueble(datos):
         supports_objects=supports_objects,
         preferred_wall=preferred_wall,
         wall_height=wall_height,
-        fijado=fijado
+        fijado=fijado,
+        # Reconstruye la preferencia guardada en el proyecto.
+        preferencia_pared=preferencia_pared
+
     )
 
 
