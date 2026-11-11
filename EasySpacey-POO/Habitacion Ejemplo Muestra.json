@@ -1,0 +1,111 @@
+{
+    "nombre": "Ejemplo",
+    "ancho": 5.0,
+    "largo": 4.0,
+    "alto": 3.0,
+    "muebles": [
+        {
+            "nombre": "cama",
+            "ancho": 2.0,
+            "largo": 1.0,
+            "alto": 1.0,
+            "utilidad": 10,
+            "uso": "Dormir",
+            "posicion": {
+                "x": 0.17,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "conexiones_necesarias": 1,
+            "rotacion": 0,
+            "permite_rotacion": true,
+            "tipo_colocacion": "Suelo",
+            "puede_sostener_objetos": false,
+            "pared_preferida": "Automática",
+            "altura_pared": 0.0,
+            "fijado": false,
+            "preferencia_pared": "Cerca"
+        },
+        {
+            "nombre": "pizarra",
+            "ancho": 2.0,
+            "largo": 0.2,
+            "alto": 2.0,
+            "utilidad": 8,
+            "uso": "Trabajar",
+            "posicion": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "conexiones_necesarias": 0,
+            "rotacion": 0,
+            "permite_rotacion": true,
+            "tipo_colocacion": "Pared",
+            "puede_sostener_objetos": false,
+            "pared_preferida": "Superior",
+            "altura_pared": 0.8,
+            "fijado": false,
+            "preferencia_pared": "Sin preferencia"
+        },
+        {
+            "nombre": "escritorio",
+            "ancho": 2.0,
+            "largo": 1.0,
+            "alto": 1.0,
+            "utilidad": 9,
+            "uso": "Trabajar",
+            "posicion": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "conexiones_necesarias": 2,
+            "rotacion": 0,
+            "permite_rotacion": true,
+            "tipo_colocacion": "Suelo",
+            "puede_sostener_objetos": false,
+            "pared_preferida": "Automática",
+            "altura_pared": 0.0,
+            "fijado": false,
+            "preferencia_pared": "Cerca"
+        }
+    ],
+    "restricciones": [
+        {
+            "tipo": "Puerta",
+            "pared": "Inferior",
+            "seccion": "Personalizada",
+            "ancho": 1.0,
+            "alto": 2.0,
+            "profundidad": 1.0,
+            "posicion": {
+                "x": 0.3,
+                "y": 3.0,
+                "z": 0.0
+            }
+        }
+    ],
+    "outlets": [
+        {
+            "nombre": "1",
+            "pared": "Superior",
+            "posicion": {
+                "x": 1.23,
+                "y": 0,
+                "z": 0.35
+            },
+            "capacidad": 2
+        },
+        {
+            "nombre": "2",
+            "pared": "Inferior",
+            "posicion": {
+                "x": 3.7,
+                "y": 4.0,
+                "z": 0.35
+            },
+            "capacidad": 2
+        }
+    ]
+}
