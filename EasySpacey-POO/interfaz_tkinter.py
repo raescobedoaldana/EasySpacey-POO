@@ -9,7 +9,8 @@ from time import perf_counter
 from distribucion import Distribucion
 from habitacion import Habitacion
 from mueble import Mueble
-from persistencia import guardar_proyecto
+# Permite guardar y recuperar habitaciones desde archivos JSON.
+from persistencia import guardar_proyecto, cargar_proyecto
 from punto3d import Punto3D
 from restriccion import Restriccion
 from outlet import Outlet
@@ -412,6 +413,9 @@ class TkinterInterface:
         ttk.Button(actions, text="Anterior", command=self._previous).grid(row=1, column=0, sticky="ew", padx=(0, 3))
         ttk.Button(actions, text="Siguiente", command=self._next).grid(row=1, column=1, sticky="ew", padx=3)
         ttk.Button(actions, text="Guardar JSON", command=self._save).grid(row=1, column=2, sticky="ew", padx=(3, 0))
+        # Permite abrir un proyecto anterior sin volver a ingresar sus datos.
+        ttk.Button(actions,text="Cargar JSON",command=self._load).grid(row=2, column=0, columnspan=3, sticky="ew", pady=(5, 0))
+
 
     # Crea el Canvas donde se dibuja la habitación.
     def _build_preview(self):
@@ -1403,6 +1407,68 @@ class TkinterInterface:
                 f"{self._electrical_warning()} "
                 f"{self._circulation_warning()}"
             )
+
+
+
+
+    # Recupera una habitacion guardada anteriormente en JSON.
+    # Evita tener que crear nuevamente los muebles y restricciones.
+    def _load(self):
+
+        # Permite seleccionar el archivo desde el explorador.
+        filename = filedialog.askopenfilename(
+            title="Cargar proyecto EasySpacey",
+            filetypes=(
+                ("Proyecto JSON", "*.json"),
+                ("Todos los archivos", "*.*")
+            )
+        )
+
+        # Si el usuario cancela, no se modifica el proyecto actual.
+        if not filename:
+            return
+
+        # Recupera la habitacion utilizando la persistencia existente.
+        nueva_habitacion = cargar_proyecto(filename)
+
+        # Si el archivo es incorrecto, conserva el proyecto anterior.
+        if nueva_habitacion is None:
+            self._set_status(
+                "No se pudo cargar el archivo JSON.",
+                True
+            )
+            return
+
+        # Advierte antes de reemplazar una habitacion con datos.
+        if self.room is not None:
+            if not messagebox.askyesno(
+                "Cargar proyecto",
+                "Se reemplazara la habitacion actual. "
+                "¿Desea continuar?"
+            ):
+                return
+
+        # Reemplaza el proyecto solo despues de cargarlo correctamente.
+        self.room = nueva_habitacion
+
+        # Descarta alternativas de la habitacion anterior.
+        self._invalidate_distributions()
+
+        # Restablece la vista para mostrar la nueva habitacion.
+        self.preview_zoom = 1.0
+        self.preview_pan_x = 0.0
+        self.preview_pan_y = 0.0
+
+        # Actualiza los muebles, restricciones y tomacorrientes.
+        self._refresh_lists()
+        self._update_restriction_slider()
+        self._update_outlet_slider()
+        self._draw_preview()
+
+        self._set_status(
+            f"Proyecto '{self.room.nombre}' cargado correctamente. "
+            "Genere alternativas para visualizar los muebles."
+        )
 
 
     # Solicita una ruta y guarda el proyecto en JSON.
